@@ -11,7 +11,13 @@ def download_gme(url: str, target_dir: Path) -> Path:
     filename = url.split("/")[-1]
     # Decode any percent-encoding for a friendlier filename
     filename = requests.utils.unquote(filename)
-    dest = target_dir / filename
+    # Strip to bare name to prevent path-traversal via encoded separators
+    filename = Path(filename).name
+    if not filename:
+        raise ValueError("Could not derive a safe filename from URL")
+    dest = (target_dir / filename).resolve()
+    if not str(dest).startswith(str(target_dir.resolve())):
+        raise ValueError(f"Refusing to write outside target directory: {dest}")
 
     resp = requests.get(url, stream=True, timeout=30)
     resp.raise_for_status()

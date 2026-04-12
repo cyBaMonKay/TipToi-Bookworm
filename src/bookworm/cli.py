@@ -29,7 +29,7 @@ def _search(products: list[dict], term: str) -> list[dict]:
     term_lower = term.lower()
     return [
         p for p in products
-        if term_lower in p["title"].lower() or term_lower in p.get("number", "")
+        if term_lower in p["title"].lower() or term_lower in p.get("number", "").lower()
     ]
 
 
