@@ -42,7 +42,8 @@ def main():
         products = fetch_catalog(
             on_progress=lambda cur, tot: print(
                 f"\r  Loading catalog … {cur}/{tot} categories", end="", flush=True
-            )
+            ),
+            on_warning=lambda msg: print(f"\n  Warning: {msg}"),
         )
     except Exception as exc:
         print(f"\n  Error fetching catalog: {exc}")
