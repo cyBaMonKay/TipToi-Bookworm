@@ -16,6 +16,20 @@ A CLI tool to search and download TipToi® audio files (.gme) directly from the 
 pip install -e .
 ```
 
+## Run without installation
+
+From the repository root in Windows PowerShell:
+
+```powershell
+python .\run.py
+```
+
+Safe check (does not start the interactive flow):
+
+```powershell
+python .\run.py --help
+```
+
 ## Usage
 
 ```bash
