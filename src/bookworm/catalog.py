@@ -1,6 +1,8 @@
 """Fetches the TipToi product catalog directly from the official Ravensburger service page."""
 
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin
 
 import requests
@@ -13,6 +15,15 @@ CONNECT_TIMEOUT = 10
 READ_TIMEOUT = 45
 REQUEST_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 MAX_RETRIES = 4
+MAX_WORKERS = 8
+
+_thread_local = threading.local()
+
+
+def _get_thread_session():
+    if not hasattr(_thread_local, "session"):
+        _thread_local.session = _build_session()
+    return _thread_local.session
 
 
 def _build_session():
@@ -50,15 +61,37 @@ def fetch_catalog(on_progress=None, on_warning=None):
     """
     session = _build_session()
     categories = _fetch_categories(session)
+    total = len(categories)
+    products_by_index = {}
+    completed = 0
+    lock = threading.Lock()
+
+    def _fetch_one(args):
+        idx, category = args
+        thread_session = _get_thread_session()
+        return idx, _fetch_products_from_category(thread_session, category)
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(_fetch_one, (i, cat)): cat
+            for i, cat in enumerate(categories)
+        }
+        for future in as_completed(futures):
+            category = futures[future]
+            try:
+                idx, prods = future.result()
+                products_by_index[idx] = prods
+            except requests.RequestException as exc:
+                if on_warning:
+                    on_warning(f"Skipping category '{category['title']}': {exc}")
+            with lock:
+                completed += 1
+                if on_progress:
+                    on_progress(completed, total)
+
     products = []
-    for i, category in enumerate(categories):
-        try:
-            products.extend(_fetch_products_from_category(session, category))
-        except requests.RequestException as exc:
-            if on_warning:
-                on_warning(f"Skipping category '{category['title']}': {exc}")
-        if on_progress:
-            on_progress(i + 1, len(categories))
+    for i in range(total):
+        products.extend(products_by_index.get(i, []))
     return products
 
 
