@@ -1,20 +1,63 @@
 """Downloads .gme files from the official Ravensburger CDN with a progress bar."""
 
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 from tqdm import tqdm
 
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
+
+
+def _sanitize_filename(filename: str) -> str:
+    filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
+    filename = "".join(ch if ord(ch) >= 32 else "_" for ch in filename)
+    filename = filename.strip(" .")
+    if not filename:
+        return ""
+
+    stem, dot, suffix = filename.partition(".")
+    if stem.upper() in _WINDOWS_RESERVED_NAMES:
+        stem = f"_{stem}"
+    return f"{stem}{dot}{suffix}" if dot else stem
+
+
+def _derive_safe_filename(url: str) -> str:
+    path = urlsplit(url).path
+    filename = Path(path).name
+    filename = requests.utils.unquote(filename)
+    filename = Path(filename).name
+    filename = _sanitize_filename(filename)
+    return filename or "download.gme"
+
 
 def download_gme(url: str, target_dir: Path) -> Path:
     """Download a .gme file to *target_dir* and return the resulting path."""
-    filename = url.split("/")[-1]
-    # Decode any percent-encoding for a friendlier filename
-    filename = requests.utils.unquote(filename)
-    # Strip to bare name to prevent path-traversal via encoded separators
-    filename = Path(filename).name
-    if not filename:
-        raise ValueError("Could not derive a safe filename from URL")
+    filename = _derive_safe_filename(url)
     dest = (target_dir / filename).resolve()
     if not str(dest).startswith(str(target_dir.resolve())):
         raise ValueError(f"Refusing to write outside target directory: {dest}")

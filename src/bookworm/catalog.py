@@ -117,8 +117,32 @@ def _extract_numbers(raw_title):
     return re.findall(r"\d{5}", raw_title)
 
 
+def _unique_number_from_text(*parts):
+    numbers = set()
+    for part in parts:
+        if part:
+            numbers.update(re.findall(r"\d{5}", part))
+    return next(iter(numbers)) if len(numbers) == 1 else ""
+
+
+def _extract_number_from_link(link, gme_url):
+    href = link.get("href", "")
+    link_text = link.get_text(" ", strip=True)
+    parent_text = link.parent.get_text(" ", strip=True) if link.parent else ""
+
+    previous = link.previous_sibling
+    if previous is None:
+        previous_text = ""
+    elif hasattr(previous, "get_text") and callable(previous.get_text):
+        previous_text = previous.get_text(" ", strip=True)
+    else:
+        strip_attr = getattr(previous, "strip", None)
+        previous_text = strip_attr() if callable(strip_attr) else str(previous).strip()
+
+    return _unique_number_from_text(link_text, href, parent_text, previous_text, gme_url)
+
+
 def _fetch_products_from_category(session, category):
-    numbers = _extract_numbers(category["title"])
     title = _sanitize_title(category["title"])
 
     resp = session.get(category["url"], timeout=REQUEST_TIMEOUT)
@@ -127,9 +151,9 @@ def _fetch_products_from_category(session, category):
     gme_links = soup.find_all("a", href=re.compile(r"\.gme", re.IGNORECASE))
 
     products = []
-    for i, link in enumerate(gme_links):
+    for link in gme_links:
         gme_url = urljoin(resp.url, link.get("href", ""))
-        number = numbers[i] if i < len(numbers) else ""
+        number = _extract_number_from_link(link, gme_url)
         products.append({
             "title": title,
             "number": number,
