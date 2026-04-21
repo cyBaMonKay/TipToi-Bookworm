@@ -16,6 +16,19 @@ A CLI tool to search and download TipToi® audio files (.gme) directly from the 
 pip install -e .
 ```
 
+## Usage
+
+```bash
+bookworm
+```
+
+The CLI will:
+
+1. Fetch the latest product catalog from Ravensburger
+2. Prompt you to enter a search term
+3. Display matching results
+4. Let you pick one and confirm the download
+
 ## Run without installation
 
 From the repository root in Windows PowerShell:
@@ -29,19 +42,6 @@ Safe check (does not start the interactive flow):
 ```powershell
 python .\run.py --help
 ```
-
-## Usage
-
-```bash
-bookworm
-```
-
-The CLI will:
-
-1. Fetch the latest product catalog from Ravensburger
-2. Prompt you to enter a search term
-3. Display matching results
-4. Let you pick one and confirm the download
 
 ## Disclaimer
 
