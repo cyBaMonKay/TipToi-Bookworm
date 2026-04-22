@@ -29,6 +29,21 @@ The CLI will:
 3. Display matching results
 4. Let you pick one and confirm the download
 
+## Download source validation
+
+For defense in depth, URL host validation is enforced in two layers:
+
+1. **CLI precheck (`bookworm.cli`)**: warns and skips entries that are not hosted on official Ravensburger domains.
+2. **Downloader enforcement (`bookworm.downloader.download_gme`)**: rejects non-official hosts with a `ValueError`, even when called directly outside the CLI flow.
+
+Allowed host suffixes:
+
+- `ravensburger.cloud`
+- `ravensburger.de`
+- `ravensburger.info`
+
+Subdomains of these hosts are allowed (for example `cdn.ravensburger.de`).
+
 ## Run without installation
 
 From the repository root in Windows PowerShell:
