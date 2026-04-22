@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 import requests
 from tqdm import tqdm
 
+ALLOWED_HOSTS = ("ravensburger.cloud", "ravensburger.de", "ravensburger.info")
+
 _WINDOWS_RESERVED_NAMES = {
     "CON",
     "PRN",
@@ -55,8 +57,17 @@ def _derive_safe_filename(url: str) -> str:
     return filename or "download.gme"
 
 
+def is_official_source(url: str) -> bool:
+    """Return True if *url* is hosted on an official Ravensburger domain."""
+    host = urlsplit(url).hostname or ""
+    return any(host == allowed or host.endswith("." + allowed) for allowed in ALLOWED_HOSTS)
+
+
 def download_gme(url: str, target_dir: Path) -> Path:
     """Download a .gme file to *target_dir* and return the resulting path."""
+    if not is_official_source(url):
+        raise ValueError("Refusing download from non-official host")
+
     filename = _derive_safe_filename(url)
     dest = (target_dir / filename).resolve()
     if not str(dest).startswith(str(target_dir.resolve())):

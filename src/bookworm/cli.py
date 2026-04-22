@@ -4,9 +4,7 @@ import sys
 from pathlib import Path
 
 from bookworm.catalog import fetch_catalog
-from bookworm.downloader import download_gme
-
-ALLOWED_HOSTS = ("ravensburger.cloud", "ravensburger.de", "ravensburger.info")
+from bookworm.downloader import download_gme, is_official_source
 
 BANNER = r"""
  _____ _     _____     _   ___            _
@@ -15,16 +13,6 @@ BANNER = r"""
   |_| |_| .__/|_|\___/|_| |___/\___/\___/|_\_\ \_/\_/\___/_| |_|_|_|
         |_|
 """
-
-
-def _is_official_source(url: str) -> bool:
-    """Return True if the download URL is hosted on an official Ravensburger domain."""
-    from urllib.parse import urlparse
-
-    host = urlparse(url).hostname or ""
-    return any(host == allowed or host.endswith("." + allowed) for allowed in ALLOWED_HOSTS)
-
-
 def _search(products: list[dict], term: str) -> list[dict]:
     term_lower = term.lower()
     return [
@@ -100,7 +88,7 @@ def main():
         print(f"\n  Selected: {chosen['title']}{number_info}")
         print(f"  URL:      {chosen['gme']}")
 
-        if not _is_official_source(chosen["gme"]):
+        if not is_official_source(chosen["gme"]):
             print("  ⚠ Skipped — URL is not from an official Ravensburger domain.\n")
             continue
 
