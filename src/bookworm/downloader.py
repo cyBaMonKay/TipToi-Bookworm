@@ -73,19 +73,19 @@ def download_gme(url: str, target_dir: Path) -> Path:
     if not str(dest).startswith(str(target_dir.resolve())):
         raise ValueError(f"Refusing to write outside target directory: {dest}")
 
-    resp = requests.get(url, stream=True, timeout=30)
-    resp.raise_for_status()
-    total = int(resp.headers.get("content-length", 0))
+    with requests.get(url, stream=True, timeout=30) as resp:
+        resp.raise_for_status()
+        total = int(resp.headers.get("content-length", 0))
 
-    with open(dest, "wb") as f, tqdm(
-        desc=filename,
-        total=total,
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        for chunk in resp.iter_content(chunk_size=8192):
-            written = f.write(chunk)
-            bar.update(written)
+        with open(dest, "wb") as f, tqdm(
+            desc=filename,
+            total=total,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as bar:
+            for chunk in resp.iter_content(chunk_size=8192):
+                written = f.write(chunk)
+                bar.update(written)
 
     return dest

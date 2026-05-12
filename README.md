@@ -58,6 +58,17 @@ Safe check (does not start the interactive flow):
 python .\run.py --help
 ```
 
+## Run tests without installation
+
+From the repository root:
+
+```powershell
+python -m unittest discover -s tests
+```
+
+You still need the project dependencies installed in your Python environment, but you do not need to install the package itself.
+
 ## Disclaimer
 
 TipToi-Bookworm is neither offered nor supported by Ravensburger. tiptoi® is a registered trademark of Ravensburger.
+

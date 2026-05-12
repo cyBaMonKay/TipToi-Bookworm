@@ -1,17 +1,36 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+
+import requests
+
 from bookworm.downloader import download_gme
 
 
 class _FakeResponse:
-    def __init__(self, body=b"abc"):
+    def __init__(self, body=b"abc", status_error=None):
         self.headers = {"content-length": str(len(body))}
         self._body = body
+        self._status_error = status_error
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def close(self):
+        self.closed = True
 
     def raise_for_status(self):
+        if self._status_error is not None:
+            raise self._status_error
         return None
 
     def iter_content(self, chunk_size=8192):
@@ -60,6 +79,19 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             dest = download_gme("https://cdn.ravensburger.de/files/game.gme", Path(tmp))
         self.assertEqual(dest.name, "game.gme")
 
+    @patch("bookworm.downloader.requests.get")
+    def test_closes_response_when_request_fails(self, mock_get):
+        response = _FakeResponse(status_error=requests.HTTPError("boom"))
+        mock_get.return_value = response
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(requests.HTTPError):
+                download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+
+        self.assertTrue(response.closed)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
