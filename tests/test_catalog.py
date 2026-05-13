@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
@@ -29,14 +30,14 @@ class CatalogNumberMappingTests(unittest.TestCase):
         html = """
         <html><body>
           <ul>
-            <li><a href="/audio/a.gme">Löwe 12345</a></li>
+            <li><a href="/audio/a.gme">L\u00f6we 12345</a></li>
             <li><a href="/audio/b.gme">Elefant 67890</a></li>
           </ul>
         </body></html>
         """
         session = _FakeSession(html)
         category = {
-            "title": "tiptoi® Tiere 11111 22222 Audiodatei",
+            "title": "tiptoi\u00ae Tiere 11111 22222 Audiodatei",
             "url": "https://service.ravensburger.de/cat1",
         }
 
@@ -52,7 +53,7 @@ class CatalogNumberMappingTests(unittest.TestCase):
         """
         session = _FakeSession(html)
         category = {
-            "title": "tiptoi® Geschichten 12345 67890 Audiodatei",
+            "title": "tiptoi\u00ae Geschichten 12345 67890 Audiodatei",
             "url": "https://service.ravensburger.de/cat2",
         }
 
@@ -68,7 +69,7 @@ class CatalogNumberMappingTests(unittest.TestCase):
         """
         session = _FakeSession(html)
         category = {
-            "title": "tiptoi® Geschichten Audiodatei",
+            "title": "tiptoi\u00ae Geschichten Audiodatei",
             "url": "https://service.ravensburger.de/cat3",
         }
 
@@ -77,7 +78,36 @@ class CatalogNumberMappingTests(unittest.TestCase):
         self.assertEqual(products[0]["number"], "54321")
 
 
+class _CloseAwareSession:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class CatalogSessionCleanupTests(unittest.TestCase):
+    def test_closes_all_created_sessions_and_clears_thread_local(self):
+        sessions = []
+
+        def _session_factory():
+            session = _CloseAwareSession()
+            sessions.append(session)
+            return session
+
+        with patch("bookworm.catalog._build_session", side_effect=_session_factory):
+            with patch("bookworm.catalog._fetch_categories", return_value=[{"title": "Cat", "url": "https://example.test/cat"}]):
+                with patch("bookworm.catalog._fetch_products_from_category", return_value=[]):
+                    from bookworm import catalog as catalog_module
+
+                    products = catalog_module.fetch_catalog()
+
+        self.assertEqual(products, [])
+        self.assertGreaterEqual(len(sessions), 2)
+        self.assertTrue(all(session.closed for session in sessions))
+        self.assertFalse(hasattr(catalog_module._thread_local, "session"))
+
+
 if __name__ == "__main__":
     unittest.main()
-
 

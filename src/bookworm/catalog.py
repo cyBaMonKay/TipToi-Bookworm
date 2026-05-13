@@ -20,9 +20,16 @@ MAX_WORKERS = 8
 _thread_local = threading.local()
 
 
-def _get_thread_session():
+def _get_thread_session(created_sessions=None, sessions_lock=None):
     if not hasattr(_thread_local, "session"):
-        _thread_local.session = _build_session()
+        session = _build_session()
+        _thread_local.session = session
+        if created_sessions is not None:
+            if sessions_lock is None:
+                created_sessions.append(session)
+            else:
+                with sessions_lock:
+                    created_sessions.append(session)
     return _thread_local.session
 
 
@@ -59,40 +66,55 @@ def fetch_catalog(on_progress=None, on_warning=None):
     `on_progress` is called with (current, total) after each category is processed.
     `on_warning` is called with a warning message when a category cannot be loaded.
     """
+    created_sessions = []
+    sessions_lock = threading.Lock()
     session = _build_session()
-    categories = _fetch_categories(session)
-    total = len(categories)
-    products_by_index = {}
-    completed = 0
-    lock = threading.Lock()
+    created_sessions.append(session)
 
-    def _fetch_one(args):
-        idx, category = args
-        thread_session = _get_thread_session()
-        return idx, _fetch_products_from_category(thread_session, category)
+    try:
+        categories = _fetch_categories(session)
+        total = len(categories)
+        products_by_index = {}
+        completed = 0
+        lock = threading.Lock()
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {
-            executor.submit(_fetch_one, (i, cat)): cat
-            for i, cat in enumerate(categories)
-        }
-        for future in as_completed(futures):
-            category = futures[future]
-            try:
-                idx, prods = future.result()
-                products_by_index[idx] = prods
-            except requests.RequestException as exc:
-                if on_warning:
-                    on_warning(f"Skipping category '{category['title']}': {exc}")
-            with lock:
-                completed += 1
-                if on_progress:
-                    on_progress(completed, total)
+        def _fetch_one(args):
+            idx, category = args
+            thread_session = _get_thread_session(created_sessions, sessions_lock)
+            return idx, _fetch_products_from_category(thread_session, category)
 
-    products = []
-    for i in range(total):
-        products.extend(products_by_index.get(i, []))
-    return products
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {
+                executor.submit(_fetch_one, (i, cat)): cat
+                for i, cat in enumerate(categories)
+            }
+            for future in as_completed(futures):
+                category = futures[future]
+                try:
+                    idx, prods = future.result()
+                    products_by_index[idx] = prods
+                except requests.RequestException as exc:
+                    if on_warning:
+                        on_warning(f"Skipping category '{category['title']}': {exc}")
+                with lock:
+                    completed += 1
+                    if on_progress:
+                        on_progress(completed, total)
+
+        products = []
+        for i in range(total):
+            products.extend(products_by_index.get(i, []))
+        return products
+    finally:
+        if hasattr(_thread_local, "session"):
+            delattr(_thread_local, "session")
+
+        with sessions_lock:
+            sessions_to_close = list(created_sessions)
+            created_sessions.clear()
+
+        for created_session in sessions_to_close:
+            created_session.close()
 
 
 def _fetch_categories(session):
@@ -108,7 +130,7 @@ def _fetch_categories(session):
 
 def _sanitize_title(raw_title):
     title = re.sub(r"\s\d{5}.*$", "", raw_title)
-    for remove in ("tiptoi®", "Audiodatei", "Audioatei", "\xa0"):
+    for remove in ("tiptoi\u00ae", "Audiodatei", "Audioatei", "\xa0"):
         title = title.replace(remove, " " if remove == "\xa0" else "")
     return title.strip()
 
@@ -160,3 +182,4 @@ def _fetch_products_from_category(session, category):
             "gme": gme_url,
         })
     return products
+
