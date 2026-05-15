@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+import requests
+
 from bookworm.catalog import fetch_catalog
 from bookworm.downloader import download_gme, is_official_source
 
@@ -33,7 +35,7 @@ def main():
             ),
             on_warning=lambda msg: print(f"\n  Warning: {msg}"),
         )
-    except Exception as exc:
+    except (requests.RequestException, OSError) as exc:
         print(f"\n  Error fetching catalog: {exc}")
         sys.exit(1)
 
@@ -105,9 +107,10 @@ def main():
         try:
             dest = download_gme(chosen["gme"], Path.cwd())
             print(f"\n  ✔ Saved to {dest}\n")
-        except Exception as exc:
+        except (requests.RequestException, OSError, ValueError) as exc:
             print(f"\n  ✘ Download failed: {exc}\n")
 
 
 if __name__ == "__main__":
     main()
+
