@@ -12,11 +12,18 @@ from bookworm.downloader import download_gme
 
 
 class _FakeResponse:
-    def __init__(self, body=b"abc", status_error=None):
-        self.headers = {"content-length": str(len(body))}
+    def __init__(self, body=b"abc", status_error=None, chunks=None, iter_error=None):
         self._body = body
+        self._chunks = chunks
         self._status_error = status_error
+        self._iter_error = iter_error
         self.closed = False
+
+        if chunks is None:
+            content_length = len(body)
+        else:
+            content_length = sum(len(chunk) for chunk in chunks)
+        self.headers = {"content-length": str(content_length)}
 
     def __enter__(self):
         return self
@@ -34,7 +41,14 @@ class _FakeResponse:
         return None
 
     def iter_content(self, chunk_size=8192):
-        yield self._body
+        if self._chunks is None:
+            yield self._body
+        else:
+            for chunk in self._chunks:
+                yield chunk
+
+        if self._iter_error is not None:
+            raise self._iter_error
 
 
 class DownloadFilenameSafetyTests(unittest.TestCase):
@@ -90,8 +104,47 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
         self.assertTrue(response.closed)
 
+    @patch("bookworm.downloader.requests.get")
+    def test_skips_keep_alive_empty_chunks_without_error(self, mock_get):
+        mock_get.return_value = _FakeResponse(chunks=[b"ab", b"", b"c", b""])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+            self.assertEqual(dest.read_bytes(), b"abc")
+
+    @patch("bookworm.downloader.requests.get")
+    def test_raises_and_closes_response_when_stream_is_interrupted(self, mock_get):
+        response = _FakeResponse(
+            chunks=[b"abc"],
+            iter_error=requests.ConnectionError("stream interrupted"),
+        )
+        mock_get.return_value = response
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(requests.ConnectionError, "interrupted"):
+                download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+
+        self.assertTrue(response.closed)
+
+    @patch("bookworm.downloader.open", side_effect=OSError("disk full"))
+    @patch("bookworm.downloader.requests.get")
+    def test_raises_filesystem_error_when_write_fails(self, mock_get, mock_open):
+        mock_get.return_value = _FakeResponse()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(OSError, "disk full"):
+                download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+
+        mock_open.assert_called_once()
+
+    @patch("bookworm.downloader.requests.get", side_effect=requests.Timeout("timed out"))
+    def test_raises_network_error_when_request_fails_before_response(self, mock_get):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(requests.Timeout, "timed out"):
+                download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+
+        mock_get.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
