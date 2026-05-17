@@ -1,7 +1,9 @@
-import sys
+﻿import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
@@ -23,6 +25,14 @@ class _FakeSession:
 
     def get(self, _url, timeout=None):
         return _FakeResponse(self._html)
+
+
+class _RaisingSession:
+    def __init__(self, exc):
+        self._exc = exc
+
+    def get(self, _url, timeout=None):
+        raise self._exc
 
 
 class CatalogNumberMappingTests(unittest.TestCase):
@@ -77,6 +87,28 @@ class CatalogNumberMappingTests(unittest.TestCase):
 
         self.assertEqual(products[0]["number"], "54321")
 
+    def test_raises_key_error_when_category_title_missing(self):
+        session = _FakeSession("<html></html>")
+
+        with self.assertRaises(KeyError):
+            _fetch_products_from_category(session, {"url": "https://service.ravensburger.de/cat4"})
+
+    def test_raises_key_error_when_category_url_missing(self):
+        session = _FakeSession("<html></html>")
+
+        with self.assertRaises(KeyError):
+            _fetch_products_from_category(session, {"title": "tiptoi\u00ae Geschichten Audiodatei"})
+
+    def test_propagates_request_exception_from_category_fetch(self):
+        session = _RaisingSession(requests.RequestException("category fetch failed"))
+        category = {
+            "title": "tiptoi\u00ae Geschichten Audiodatei",
+            "url": "https://service.ravensburger.de/cat5",
+        }
+
+        with self.assertRaisesRegex(requests.RequestException, "category fetch failed"):
+            _fetch_products_from_category(session, category)
+
 
 class _CloseAwareSession:
     def __init__(self):
@@ -108,6 +140,54 @@ class CatalogSessionCleanupTests(unittest.TestCase):
         self.assertFalse(hasattr(catalog_module._thread_local, "session"))
 
 
+class CatalogWarningTests(unittest.TestCase):
+    def test_warns_on_request_exception_and_continues_collecting_other_categories(self):
+        categories = [
+            {"title": "Broken", "url": "https://example.test/broken"},
+            {"title": "Working", "url": "https://example.test/working"},
+        ]
+        progress_updates = []
+        warnings = []
+
+        def _fetch_products(_session, category):
+            if category["title"] == "Broken":
+                raise requests.RequestException("network down")
+            return [{"title": "Working", "number": "12345", "gme": "https://example.test/book.gme"}]
+
+        with patch("bookworm.catalog.MAX_WORKERS", 1):
+            with patch("bookworm.catalog._fetch_categories", return_value=categories):
+                with patch("bookworm.catalog._fetch_products_from_category", side_effect=_fetch_products):
+                    from bookworm import catalog as catalog_module
+
+                    products = catalog_module.fetch_catalog(
+                        on_progress=lambda current, total: progress_updates.append((current, total)),
+                        on_warning=warnings.append,
+                    )
+
+        self.assertEqual(
+            products,
+            [{"title": "Working", "number": "12345", "gme": "https://example.test/book.gme"}],
+        )
+        self.assertEqual(warnings, ["Skipping category 'Broken': network down"])
+        self.assertEqual(progress_updates, [(1, 2), (2, 2)])
+
+    def test_does_not_call_warning_callback_when_all_categories_succeed(self):
+        categories = [{"title": "Working", "url": "https://example.test/working"}]
+        warnings = []
+
+        with patch("bookworm.catalog.MAX_WORKERS", 1):
+            with patch("bookworm.catalog._fetch_categories", return_value=categories):
+                with patch(
+                    "bookworm.catalog._fetch_products_from_category",
+                    return_value=[{"title": "Working", "number": "12345", "gme": "https://example.test/book.gme"}],
+                ):
+                    from bookworm import catalog as catalog_module
+
+                    products = catalog_module.fetch_catalog(on_warning=warnings.append)
+
+        self.assertEqual(len(products), 1)
+        self.assertEqual(warnings, [])
+
+
 if __name__ == "__main__":
     unittest.main()
-
