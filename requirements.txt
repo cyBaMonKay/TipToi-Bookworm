@@ -1,0 +1,11 @@
+beautifulsoup4==4.14.3
+bs4==0.0.2
+certifi==2026.2.25
+charset-normalizer==3.4.7
+colorama==0.4.6
+idna==3.12
+requests==2.33.1
+soupsieve==2.8.3
+tqdm==4.67.3
+typing_extensions==4.15.0
+urllib3==2.6.3

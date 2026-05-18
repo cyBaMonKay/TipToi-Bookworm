@@ -1,4 +1,4 @@
-# TipToi-Bookworm
+﻿# TipToi-Bookworm
 
 A CLI tool to search and download TipToi® audio files (.gme) directly from the official Ravensburger servers.
 
@@ -12,8 +12,18 @@ A CLI tool to search and download TipToi® audio files (.gme) directly from the 
 
 ## Setup
 
-```bash
-pip install -e .
+Use your project virtual environment to keep the global Python environment clean.
+
+From the repository root in Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python -m pip install -e .
+```
+
+For test-only setup (same dependency source as CI):
+
+```powershell
+.\.venv\Scripts\python -m pip install -r requirements.txt
 ```
 
 ## Usage
@@ -58,17 +68,22 @@ Safe check (does not start the interactive flow):
 python .\run.py --help
 ```
 
-## Run tests without installation
+## Tests (canonical command)
 
-From the repository root:
+From the repository root, run tests with the virtual environment interpreter:
 
 ```powershell
-python -m unittest discover -s tests
+.\.venv\Scripts\python -m unittest discover -s tests
 ```
 
-You still need the project dependencies installed in your Python environment, but you do not need to install the package itself.
+Required setup (clean checkout):
+
+```powershell
+.\.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+CI installs dependencies from requirements.txt and runs the same unittest command.
 
 ## Disclaimer
 
 TipToi-Bookworm is neither offered nor supported by Ravensburger. tiptoi® is a registered trademark of Ravensburger.
-
