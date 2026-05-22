@@ -1,6 +1,8 @@
-"""Downloads .gme files from the official Ravensburger CDN with a progress bar."""
+﻿"""Downloads .gme files from the official Ravensburger CDN with a progress bar."""
 
+import os
 import re
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -73,19 +75,40 @@ def download_gme(url: str, target_dir: Path) -> Path:
     if not str(dest).startswith(str(target_dir.resolve())):
         raise ValueError(f"Refusing to write outside target directory: {dest}")
 
-    with requests.get(url, stream=True, timeout=30) as resp:
-        resp.raise_for_status()
-        total = int(resp.headers.get("content-length", 0))
+    target_dir.mkdir(parents=True, exist_ok=True)
+    fd, temp_path_str = tempfile.mkstemp(
+        dir=str(target_dir.resolve()),
+        prefix=f".{filename}.",
+        suffix=".part",
+    )
+    temp_path = Path(temp_path_str)
 
-        with open(dest, "wb") as f, tqdm(
-            desc=filename,
-            total=total,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
-        ) as bar:
-            for chunk in resp.iter_content(chunk_size=8192):
-                written = f.write(chunk)
-                bar.update(written)
+    try:
+        with requests.get(url, stream=True, timeout=30) as resp:
+            resp.raise_for_status()
+            total = int(resp.headers.get("content-length", 0))
+
+            with os.fdopen(fd, "wb") as f, tqdm(
+                desc=filename,
+                total=total,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as bar:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    written = f.write(chunk)
+                    bar.update(written)
+
+        os.replace(temp_path, dest)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            temp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
     return dest
