@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +85,13 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "non-official host"):
                 download_gme("https://example.test/files/game.gme", Path(tmp))
+        mock_get.assert_not_called()
+
+    @patch("bookworm.downloader.requests.get")
+    def test_rejects_non_gme_paths_on_official_hosts(self, mock_get):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, r"expected a \.gme file"):
+                download_gme("https://ravensburger.cloud/files/game.txt", Path(tmp))
         mock_get.assert_not_called()
 
     @patch("bookworm.downloader.requests.get")

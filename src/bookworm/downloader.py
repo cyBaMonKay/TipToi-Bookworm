@@ -1,4 +1,4 @@
-﻿"""Downloads .gme files from the official Ravensburger CDN with a progress bar."""
+"""Downloads .gme files from the official Ravensburger CDN with a progress bar."""
 
 import os
 import re
@@ -59,6 +59,11 @@ def _derive_safe_filename(url: str) -> str:
     return filename or "download.gme"
 
 
+def _validate_gme_filename(filename: str) -> None:
+    if Path(filename).suffix.lower() != ".gme":
+        raise ValueError(f"Refusing download: expected a .gme file, got {filename!r}")
+
+
 def is_official_source(url: str) -> bool:
     """Return True if *url* is hosted on an official Ravensburger domain."""
     host = urlsplit(url).hostname or ""
@@ -71,6 +76,7 @@ def download_gme(url: str, target_dir: Path) -> Path:
         raise ValueError("Refusing download from non-official host")
 
     filename = _derive_safe_filename(url)
+    _validate_gme_filename(filename)
     dest = (target_dir / filename).resolve()
     if not str(dest).startswith(str(target_dir.resolve())):
         raise ValueError(f"Refusing to write outside target directory: {dest}")
