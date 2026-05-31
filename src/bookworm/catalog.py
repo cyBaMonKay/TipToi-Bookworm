@@ -1,4 +1,4 @@
-"""Fetches the TipToi product catalog directly from the official Ravensburger service page."""
+﻿"""Fetches the TipToi product catalog directly from the official Ravensburger service page."""
 
 import re
 import threading
@@ -122,10 +122,16 @@ def _fetch_categories(session):
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
     links = soup.find_all("a", class_="mt-listing-detailed-subpage-title")
-    return [
-        {"title": a.get("title", ""), "url": urljoin(resp.url, a.get("href", ""))}
-        for a in links
-    ]
+    categories = []
+    for a in links:
+        href = a.get("href", "").strip()
+        if not href:
+            continue
+        url = urljoin(resp.url, href)
+        if not url.startswith(("http://", "https://")):
+            continue
+        categories.append({"title": a.get("title", ""), "url": url})
+    return categories
 
 
 def _sanitize_title(raw_title):

@@ -7,7 +7,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
-from bookworm.catalog import _fetch_products_from_category
+from bookworm.catalog import _fetch_categories, _fetch_products_from_category
 
 
 class _FakeResponse:
@@ -188,6 +188,30 @@ class CatalogWarningTests(unittest.TestCase):
         self.assertEqual(len(products), 1)
         self.assertEqual(warnings, [])
 
+
+class FetchCategoriesFilterTests(unittest.TestCase):
+    def test_ignores_anchors_with_empty_or_missing_href(self):
+        html = '''
+        <html><body>
+          <a class="mt-listing-detailed-subpage-title" href="https://example.test/valid" title="Good">Good</a>
+          <a class="mt-listing-detailed-subpage-title" href="" title="Empty">Empty</a>
+          <a class="mt-listing-detailed-subpage-title" title="Missing">Missing</a>
+        </body></html>
+        '''
+
+        class _FakeResp:
+            text = html
+            url = "https://example.test/listing"
+            def raise_for_status(self): pass
+
+        class _FakeSess:
+            def get(self, _url, timeout=None): return _FakeResp()
+
+        categories = _fetch_categories(_FakeSess())
+
+        self.assertEqual(len(categories), 1)
+        self.assertEqual(categories[0]["title"], "Good")
+        self.assertEqual(categories[0]["url"], "https://example.test/valid")
 
 if __name__ == "__main__":
     unittest.main()
