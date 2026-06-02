@@ -190,28 +190,90 @@ class CatalogWarningTests(unittest.TestCase):
 
 
 class FetchCategoriesFilterTests(unittest.TestCase):
-    def test_ignores_anchors_with_empty_or_missing_href(self):
+    def test_extracts_only_valid_listing_links(self):
         html = '''
         <html><body>
-          <a class="mt-listing-detailed-subpage-title" href="https://example.test/valid" title="Good">Good</a>
-          <a class="mt-listing-detailed-subpage-title" href="" title="Empty">Empty</a>
-          <a class="mt-listing-detailed-subpage-title" title="Missing">Missing</a>
+          <a class="mt-listing-detailed-subpage-title" href="https://example.test/a" title="Alpha">Alpha</a>
+          <a class="mt-listing-detailed-subpage-title" href="mailto:test@example.test" title="Skip">Skip</a>
+          <a class="other-class" href="https://example.test/ignored" title="Ignored">Ignored</a>
         </body></html>
         '''
 
         class _FakeResp:
             text = html
             url = "https://example.test/listing"
-            def raise_for_status(self): pass
+
+            def raise_for_status(self):
+                return None
 
         class _FakeSess:
-            def get(self, _url, timeout=None): return _FakeResp()
+            def get(self, _url, timeout=None):
+                return _FakeResp()
 
         categories = _fetch_categories(_FakeSess())
 
-        self.assertEqual(len(categories), 1)
-        self.assertEqual(categories[0]["title"], "Good")
-        self.assertEqual(categories[0]["url"], "https://example.test/valid")
+        self.assertEqual(
+            categories,
+            [{"title": "Alpha", "url": "https://example.test/a"}],
+        )
+
+    def test_resolves_relative_hrefs_against_listing_url(self):
+        html = '''
+        <html><body>
+          <a class="mt-listing-detailed-subpage-title" href="/tiptoi/audios/cat-a" title="Root Relative">A</a>
+          <a class="mt-listing-detailed-subpage-title" href="downloads/cat-b" title="Path Relative">B</a>
+        </body></html>
+        '''
+
+        class _FakeResp:
+            text = html
+            url = "https://service.ravensburger.de/tiptoi/listing/index.html"
+
+            def raise_for_status(self):
+                return None
+
+        class _FakeSess:
+            def get(self, _url, timeout=None):
+                return _FakeResp()
+
+        categories = _fetch_categories(_FakeSess())
+
+        self.assertEqual(
+            [c["url"] for c in categories],
+            [
+                "https://service.ravensburger.de/tiptoi/audios/cat-a",
+                "https://service.ravensburger.de/tiptoi/listing/downloads/cat-b",
+            ],
+        )
+
+    def test_skips_missing_or_blank_href_and_keeps_missing_title_as_empty(self):
+        html = '''
+        <html><body>
+          <a class="mt-listing-detailed-subpage-title" href="" title="Empty">Empty</a>
+          <a class="mt-listing-detailed-subpage-title" href="   " title="Blank">Blank</a>
+          <a class="mt-listing-detailed-subpage-title" title="MissingHref">MissingHref</a>
+          <a class="mt-listing-detailed-subpage-title" href="https://example.test/no-title">No Title</a>
+        </body></html>
+        '''
+
+        class _FakeResp:
+            text = html
+            url = "https://example.test/listing"
+
+            def raise_for_status(self):
+                return None
+
+        class _FakeSess:
+            def get(self, _url, timeout=None):
+                return _FakeResp()
+
+        categories = _fetch_categories(_FakeSess())
+
+        self.assertEqual(
+            categories,
+            [{"title": "", "url": "https://example.test/no-title"}],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
