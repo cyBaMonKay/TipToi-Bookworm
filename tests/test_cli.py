@@ -51,5 +51,58 @@ class CliExceptionHandlingTests(unittest.TestCase):
                             cli.main()
 
 
+class CliInteractiveLoopTests(unittest.TestCase):
+    def test_eof_at_search_prompt_exits_with_bye(self):
+        out = io.StringIO()
+
+        with patch('bookworm.cli.fetch_catalog', return_value=[]):
+            with patch('builtins.input', side_effect=EOFError):
+                with patch('sys.stdout', new=out):
+                    cli.main()
+
+        self.assertIn('Bye!', out.getvalue())
+
+    def test_keyboard_interrupt_at_selection_exits_gracefully(self):
+        out = io.StringIO()
+        products = [{'title': 'Book', 'number': '12345', 'gme': 'https://ravensburger.cloud/files/book.gme'}]
+
+        with patch('bookworm.cli.fetch_catalog', return_value=products):
+            with patch('builtins.input', side_effect=['book', KeyboardInterrupt]):
+                with patch('sys.stdout', new=out):
+                    cli.main()
+
+        self.assertIn('Found 1 result(s):', out.getvalue())
+        self.assertIn('Bye!', out.getvalue())
+
+    def test_keyboard_interrupt_at_confirmation_exits_gracefully(self):
+        out = io.StringIO()
+        products = [{'title': 'Book', 'number': '12345', 'gme': 'https://ravensburger.cloud/files/book.gme'}]
+
+        with patch('bookworm.cli.fetch_catalog', return_value=products):
+            with patch('bookworm.cli.is_official_source', return_value=True):
+                with patch('bookworm.cli.download_gme') as mock_download:
+                    with patch('builtins.input', side_effect=['book', '1', KeyboardInterrupt]):
+                        with patch('sys.stdout', new=out):
+                            cli.main()
+
+        self.assertIn('Selected: Book (12345)', out.getvalue())
+        self.assertIn('Bye!', out.getvalue())
+        mock_download.assert_not_called()
+
+    def test_invalid_numeric_selection_prints_message_and_returns_to_search_loop(self):
+        out = io.StringIO()
+        products = [{'title': 'Book', 'number': '12345', 'gme': 'https://ravensburger.cloud/files/book.gme'}]
+
+        with patch('bookworm.cli.fetch_catalog', return_value=products):
+            with patch('bookworm.cli.download_gme') as mock_download:
+                with patch('builtins.input', side_effect=['book', '999', 'q']):
+                    with patch('sys.stdout', new=out):
+                        cli.main()
+
+        self.assertIn('Invalid selection.', out.getvalue())
+        self.assertIn('Bye!', out.getvalue())
+        mock_download.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
