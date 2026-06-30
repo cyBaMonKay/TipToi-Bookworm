@@ -1,4 +1,4 @@
-﻿# TipToi-Bookworm
+# TipToi-Bookworm
 
 A CLI tool to search and download TipToi® audio files (.gme) directly from the official Ravensburger servers.
 
@@ -52,7 +52,7 @@ Allowed host suffixes:
 - `ravensburger.de`
 - `ravensburger.info`
 
-Subdomains of these hosts are allowed (for example `cdn.ravensburger.de`).
+Subdomains of these hosts are allowed (for example `cdn.ravensburger.de`). Host checks are case-insensitive, reject malformed URLs, and do not treat trailing-dot hostnames as official.
 
 ## Run without installation
 

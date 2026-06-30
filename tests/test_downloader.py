@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import requests
 
 import bookworm.downloader as downloader
-from bookworm.downloader import download_gme
+from bookworm.downloader import download_gme, is_official_source
 
 
 class _FakeResponse:
@@ -53,6 +53,21 @@ class _FakeResponse:
 
 
 class DownloadFilenameSafetyTests(unittest.TestCase):
+    def test_official_source_host_validation_matrix(self):
+        cases = [
+            ("https://ravensburger.cloud/files/game.gme", True, "exact host match"),
+            ("https://cdn.ravensburger.de/files/game.gme", True, "subdomain match"),
+            ("https://RAVENSBURGER.CLOUD/files/game.gme", True, "uppercase host handling"),
+            ("https://ravensburger.cloud./files/game.gme", False, "trailing-dot host behavior"),
+            ("https://evilravensburger.cloud/files/game.gme", False, "disallowed lookalike"),
+            ("not a url", False, "malformed URL"),
+            ("https://", False, "malformed URL with empty host"),
+        ]
+
+        for url, expected, scenario in cases:
+            with self.subTest(scenario=scenario, url=url):
+                self.assertEqual(is_official_source(url), expected)
+
     @patch("bookworm.downloader.requests.get")
     def test_uses_path_basename_not_query_or_fragment(self, mock_get):
         mock_get.return_value = _FakeResponse()
