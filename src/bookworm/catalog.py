@@ -18,6 +18,7 @@ READ_TIMEOUT = 45
 REQUEST_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 MAX_RETRIES = 4
 MAX_WORKERS = 8
+ARTICLE_NUMBER_PATTERN = r"\d{5}"
 
 _thread_local = threading.local()
 
@@ -137,21 +138,21 @@ def _fetch_categories(session):
 
 
 def _sanitize_title(raw_title):
-    title = re.sub(r"\s\d{5}.*$", "", raw_title)
+    title = re.sub(rf"\s{ARTICLE_NUMBER_PATTERN}.*$", "", raw_title)
     for remove in ("tiptoi\u00ae", "Audiodatei", "Audioatei", "\xa0"):
         title = title.replace(remove, " " if remove == "\xa0" else "")
     return title.strip()
 
 
 def _extract_numbers(raw_title):
-    return re.findall(r"\d{5}", raw_title)
+    return re.findall(ARTICLE_NUMBER_PATTERN, raw_title)
 
 
 def _unique_number_from_text(*parts):
     numbers = set()
     for part in parts:
         if part:
-            numbers.update(re.findall(r"\d{5}", part))
+            numbers.update(re.findall(ARTICLE_NUMBER_PATTERN, part))
     return next(iter(numbers)) if len(numbers) == 1 else ""
 
 
@@ -190,5 +191,3 @@ def _fetch_products_from_category(session, category) -> list[Product]:
             "gme": gme_url,
         })
     return products
-
-

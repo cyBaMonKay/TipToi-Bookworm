@@ -9,6 +9,14 @@ from bookworm.catalog import fetch_catalog
 from bookworm.downloader import download_gme, is_official_source
 from bookworm.types import Product
 
+QUIT_COMMAND = "q"
+BACK_COMMAND = "b"
+CONFIRM_DOWNLOAD = "y"
+
+BYE_MESSAGE = "  Bye!"
+INVALID_SELECTION_MESSAGE = "  Invalid selection.\n"
+DOWNLOAD_CANCELLED_MESSAGE = "  Download cancelled.\n"
+
 BANNER = r"""
  _____ _     _____     _   ___            _
 |_   _(_)_ _|_   _|__ (_) | _ ) ___  ___ | |____ __ _____ _ _ _ __
@@ -16,6 +24,8 @@ BANNER = r"""
   |_| |_| .__/|_|\___/|_| |___/\___/\___/|_\_\ \_/\_/\___/_| |_|_|_|
         |_|
 """
+
+
 def _search(products: list[Product], term: str) -> list[Product]:
     term_lower = term.lower()
     return [
@@ -45,13 +55,13 @@ def main():
 
     while True:
         try:
-            query = input("  Enter search term (or 'q' to quit): ").strip()
+            query = input(f"  Enter search term (or '{QUIT_COMMAND}' to quit): ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n  Bye!")
+            print(f"\n{BYE_MESSAGE}")
             break
 
-        if query.lower() == "q":
-            print("  Bye!")
+        if query.lower() == QUIT_COMMAND:
+            print(BYE_MESSAGE)
             break
         if not query:
             continue
@@ -69,12 +79,14 @@ def main():
         print()
 
         try:
-            selection = input("  Select a number to download (or 'b' to go back): ").strip()
+            selection = input(
+                f"  Select a number to download (or '{BACK_COMMAND}' to go back): "
+            ).strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n  Bye!")
+            print(f"\n{BYE_MESSAGE}")
             break
 
-        if selection.lower() == "b":
+        if selection.lower() == BACK_COMMAND:
             print()
             continue
 
@@ -83,7 +95,7 @@ def main():
             if idx < 0 or idx >= len(results):
                 raise ValueError
         except ValueError:
-            print("  Invalid selection.\n")
+            print(INVALID_SELECTION_MESSAGE)
             continue
 
         chosen = results[idx]
@@ -98,11 +110,11 @@ def main():
         try:
             confirm = input("  Download? [y/N]: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
-            print("\n  Bye!")
+            print(f"\n{BYE_MESSAGE}")
             break
 
-        if confirm != "y":
-            print("  Download cancelled.\n")
+        if confirm != CONFIRM_DOWNLOAD:
+            print(DOWNLOAD_CANCELLED_MESSAGE)
             continue
 
         try:
@@ -114,5 +126,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

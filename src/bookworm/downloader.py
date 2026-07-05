@@ -10,6 +10,9 @@ import requests
 from tqdm import tqdm
 
 ALLOWED_HOSTS = ("ravensburger.cloud", "ravensburger.de", "ravensburger.info")
+REQUEST_TIMEOUT = 30
+STREAM_CHUNK_SIZE = 8192
+PROGRESS_UNIT_DIVISOR = 1024
 
 _WINDOWS_RESERVED_NAMES = {
     "CON",
@@ -90,7 +93,7 @@ def download_gme(url: str, target_dir: Path) -> Path:
     temp_path = Path(temp_path_str)
 
     try:
-        with requests.get(url, stream=True, timeout=30) as resp:
+        with requests.get(url, stream=True, timeout=REQUEST_TIMEOUT) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
 
@@ -99,9 +102,9 @@ def download_gme(url: str, target_dir: Path) -> Path:
                 total=total,
                 unit="B",
                 unit_scale=True,
-                unit_divisor=1024,
+                unit_divisor=PROGRESS_UNIT_DIVISOR,
             ) as bar:
-                for chunk in resp.iter_content(chunk_size=8192):
+                for chunk in resp.iter_content(chunk_size=STREAM_CHUNK_SIZE):
                     written = f.write(chunk)
                     bar.update(written)
 
