@@ -7,6 +7,7 @@ import requests
 
 from bookworm.catalog import fetch_catalog
 from bookworm.downloader import download_gme, is_official_source
+from bookworm.types import Product
 
 BANNER = r"""
  _____ _     _____     _   ___            _
@@ -15,7 +16,7 @@ BANNER = r"""
   |_| |_| .__/|_|\___/|_| |___/\___/\___/|_\_\ \_/\_/\___/_| |_|_|_|
         |_|
 """
-def _search(products: list[dict], term: str) -> list[dict]:
+def _search(products: list[Product], term: str) -> list[Product]:
     term_lower = term.lower()
     return [
         p for p in products
@@ -113,4 +114,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

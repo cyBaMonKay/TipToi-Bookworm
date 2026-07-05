@@ -1,4 +1,4 @@
-﻿"""Fetches the TipToi product catalog directly from the official Ravensburger service page."""
+"""Fetches the TipToi product catalog directly from the official Ravensburger service page."""
 
 import re
 import threading
@@ -9,6 +9,8 @@ import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from bookworm.types import Product
 
 CATALOG_URL = "https://service.ravensburger.de/tiptoi%C2%AE/tiptoi%C2%AE_Audiodateien"
 CONNECT_TIMEOUT = 10
@@ -59,7 +61,7 @@ def _build_session():
     return session
 
 
-def fetch_catalog(on_progress=None, on_warning=None):
+def fetch_catalog(on_progress=None, on_warning=None) -> list[Product]:
     """Scrape the official Ravensburger service page and return a list of products.
 
     Each product is a dict with keys: title, number, gme.
@@ -170,7 +172,7 @@ def _extract_number_from_link(link, gme_url):
     return _unique_number_from_text(link_text, href, parent_text, previous_text, gme_url)
 
 
-def _fetch_products_from_category(session, category):
+def _fetch_products_from_category(session, category) -> list[Product]:
     title = _sanitize_title(category["title"])
 
     resp = session.get(category["url"], timeout=REQUEST_TIMEOUT)
@@ -188,4 +190,5 @@ def _fetch_products_from_category(session, category):
             "gme": gme_url,
         })
     return products
+
 
