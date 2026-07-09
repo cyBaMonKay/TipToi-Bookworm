@@ -1,11 +1,11 @@
-﻿import sys
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from support import FakeHtmlSession, RaisingSession, ensure_src_on_path
+
+ensure_src_on_path()
 
 from bookworm.catalog import (
     _fetch_categories,
@@ -13,31 +13,6 @@ from bookworm.catalog import (
     _get_previous_sibling_text,
     _unique_number_or_empty,
 )
-
-
-class _FakeResponse:
-    def __init__(self, text, url="https://service.ravensburger.de/cat"):
-        self.text = text
-        self.url = url
-
-    def raise_for_status(self):
-        return None
-
-
-class _FakeSession:
-    def __init__(self, html):
-        self._html = html
-
-    def get(self, _url, timeout=None):
-        return _FakeResponse(self._html)
-
-
-class _RaisingSession:
-    def __init__(self, exc):
-        self._exc = exc
-
-    def get(self, _url, timeout=None):
-        raise self._exc
 
 
 class CatalogNumberMappingTests(unittest.TestCase):
@@ -50,7 +25,7 @@ class CatalogNumberMappingTests(unittest.TestCase):
           </ul>
         </body></html>
         """
-        session = _FakeSession(html)
+        session = FakeHtmlSession(html)
         category = {
             "title": "tiptoi\u00ae Tiere 11111 22222 Audiodatei",
             "url": "https://service.ravensburger.de/cat1",
@@ -66,7 +41,7 @@ class CatalogNumberMappingTests(unittest.TestCase):
           <a href="/audio/story.gme">Geschichte</a>
         </body></html>
         """
-        session = _FakeSession(html)
+        session = FakeHtmlSession(html)
         category = {
             "title": "tiptoi\u00ae Geschichten 12345 67890 Audiodatei",
             "url": "https://service.ravensburger.de/cat2",
@@ -82,7 +57,7 @@ class CatalogNumberMappingTests(unittest.TestCase):
           <p><span>Artikel 54321</span><a href="/audio/story.gme">Geschichte</a></p>
         </body></html>
         """
-        session = _FakeSession(html)
+        session = FakeHtmlSession(html)
         category = {
             "title": "tiptoi\u00ae Geschichten Audiodatei",
             "url": "https://service.ravensburger.de/cat3",
@@ -93,19 +68,19 @@ class CatalogNumberMappingTests(unittest.TestCase):
         self.assertEqual(products[0]["number"], "54321")
 
     def test_raises_key_error_when_category_title_missing(self):
-        session = _FakeSession("<html></html>")
+        session = FakeHtmlSession("<html></html>")
 
         with self.assertRaises(KeyError):
             _fetch_products_from_category(session, {"url": "https://service.ravensburger.de/cat4"})
 
     def test_raises_key_error_when_category_url_missing(self):
-        session = _FakeSession("<html></html>")
+        session = FakeHtmlSession("<html></html>")
 
         with self.assertRaises(KeyError):
             _fetch_products_from_category(session, {"title": "tiptoi\u00ae Geschichten Audiodatei"})
 
     def test_propagates_request_exception_from_category_fetch(self):
-        session = _RaisingSession(requests.RequestException("category fetch failed"))
+        session = RaisingSession(requests.RequestException("category fetch failed"))
         category = {
             "title": "tiptoi\u00ae Geschichten Audiodatei",
             "url": "https://service.ravensburger.de/cat5",
@@ -147,6 +122,7 @@ class CatalogSessionCleanupTests(unittest.TestCase):
 
 class CatalogWarningTests(unittest.TestCase):
     def test_warns_on_request_exception_and_continues_collecting_other_categories(self):
+        # A single category failure should emit a warning and not abort remaining work.
         categories = [
             {"title": "Broken", "url": "https://example.test/broken"},
             {"title": "Working", "url": "https://example.test/working"},
@@ -204,18 +180,9 @@ class FetchCategoriesFilterTests(unittest.TestCase):
         </body></html>
         '''
 
-        class _FakeResp:
-            text = html
-            url = "https://example.test/listing"
+        session = FakeHtmlSession(html, url="https://example.test/listing")
 
-            def raise_for_status(self):
-                return None
-
-        class _FakeSess:
-            def get(self, _url, timeout=None):
-                return _FakeResp()
-
-        categories = _fetch_categories(_FakeSess())
+        categories = _fetch_categories(session)
 
         self.assertEqual(
             categories,
@@ -230,18 +197,9 @@ class FetchCategoriesFilterTests(unittest.TestCase):
         </body></html>
         '''
 
-        class _FakeResp:
-            text = html
-            url = "https://service.ravensburger.de/tiptoi/listing/index.html"
+        session = FakeHtmlSession(html, url="https://service.ravensburger.de/tiptoi/listing/index.html")
 
-            def raise_for_status(self):
-                return None
-
-        class _FakeSess:
-            def get(self, _url, timeout=None):
-                return _FakeResp()
-
-        categories = _fetch_categories(_FakeSess())
+        categories = _fetch_categories(session)
 
         self.assertEqual(
             [c["url"] for c in categories],
@@ -261,18 +219,9 @@ class FetchCategoriesFilterTests(unittest.TestCase):
         </body></html>
         '''
 
-        class _FakeResp:
-            text = html
-            url = "https://example.test/listing"
+        session = FakeHtmlSession(html, url="https://example.test/listing")
 
-            def raise_for_status(self):
-                return None
-
-        class _FakeSess:
-            def get(self, _url, timeout=None):
-                return _FakeResp()
-
-        categories = _fetch_categories(_FakeSess())
+        categories = _fetch_categories(session)
 
         self.assertEqual(
             categories,
@@ -337,19 +286,7 @@ class UniqueNumberOrEmptyTests(unittest.TestCase):
 
 class FetchCategoriesDiagnosticsTests(unittest.TestCase):
     def _make_fake_session(self, html, url="https://example.test/listing"):
-        class _FakeResp:
-            def __init__(self, _html, _url):
-                self.text = _html
-                self.url = _url
-
-            def raise_for_status(self):
-                return None
-
-        class _FakeSess:
-            def get(self_inner, _url, timeout=None):
-                return _FakeResp(html, url)
-
-        return _FakeSess()
+        return FakeHtmlSession(html, url=url)
 
     def test_warns_when_no_category_anchors_found(self):
         session = self._make_fake_session("<html><body><p>No links here.</p></body></html>")
@@ -382,3 +319,4 @@ class FetchCategoriesDiagnosticsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

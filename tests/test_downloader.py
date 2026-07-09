@@ -1,55 +1,16 @@
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import requests
+
+from support import FakeDownloadResponse, ensure_src_on_path
+
+ensure_src_on_path()
 
 import bookworm.downloader as downloader
 from bookworm.downloader import download_gme, is_official_source
-
-
-class _FakeResponse:
-    def __init__(self, body=b"abc", status_error=None, chunks=None, iter_error=None):
-        self._body = body
-        self._chunks = chunks
-        self._status_error = status_error
-        self._iter_error = iter_error
-        self.closed = False
-
-        if chunks is None:
-            content_length = len(body)
-        else:
-            content_length = sum(len(chunk) for chunk in chunks)
-        self.headers = {"content-length": str(content_length)}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.close()
-        return False
-
-    def close(self):
-        self.closed = True
-
-    def raise_for_status(self):
-        if self._status_error is not None:
-            raise self._status_error
-        return None
-
-    def iter_content(self, chunk_size=8192):
-        if self._chunks is None:
-            yield self._body
-        else:
-            for chunk in self._chunks:
-                yield chunk
-
-        if self._iter_error is not None:
-            raise self._iter_error
 
 
 class DownloadFilenameSafetyTests(unittest.TestCase):
@@ -70,7 +31,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
     @patch("bookworm.downloader.requests.get")
     def test_uses_path_basename_not_query_or_fragment(self, mock_get):
-        mock_get.return_value = _FakeResponse()
+        mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
             dest = download_gme(
                 "https://ravensburger.cloud/files/game%20name.gme?file=evil.txt#frag",
@@ -80,7 +41,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
     @patch("bookworm.downloader.requests.get")
     def test_sanitizes_windows_invalid_characters(self, mock_get):
-        mock_get.return_value = _FakeResponse()
+        mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
             dest = download_gme(
                 "https://ravensburger.cloud/files/ba%3Cd%3E%3Aname%3F.gme",
@@ -90,7 +51,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
     @patch("bookworm.downloader.requests.get")
     def test_fallback_filename_when_path_basename_empty(self, mock_get):
-        mock_get.return_value = _FakeResponse()
+        mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
             dest = download_gme("https://ravensburger.cloud/?x=1", Path(tmp))
         self.assertEqual(dest.name, "download.gme")
@@ -111,14 +72,14 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
     @patch("bookworm.downloader.requests.get")
     def test_allows_official_subdomains(self, mock_get):
-        mock_get.return_value = _FakeResponse()
+        mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
             dest = download_gme("https://cdn.ravensburger.de/files/game.gme", Path(tmp))
         self.assertEqual(dest.name, "game.gme")
 
     @patch("bookworm.downloader.requests.get")
     def test_closes_response_when_request_fails(self, mock_get):
-        response = _FakeResponse(status_error=requests.HTTPError("boom"))
+        response = FakeDownloadResponse(status_error=requests.HTTPError("boom"))
         mock_get.return_value = response
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -129,7 +90,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
     @patch("bookworm.downloader.requests.get")
     def test_skips_keep_alive_empty_chunks_without_error(self, mock_get):
-        mock_get.return_value = _FakeResponse(chunks=[b"ab", b"", b"c", b""])
+        mock_get.return_value = FakeDownloadResponse(chunks=[b"ab", b"", b"c", b""])
 
         with tempfile.TemporaryDirectory() as tmp:
             dest = download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
@@ -137,7 +98,8 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
     @patch("bookworm.downloader.requests.get")
     def test_interrupted_stream_never_leaves_final_or_temp_file(self, mock_get):
-        response = _FakeResponse(
+        # Simulate mid-stream failure and assert cleanup of both final and temp artifacts.
+        response = FakeDownloadResponse(
             chunks=[b"abc"],
             iter_error=requests.ConnectionError("stream interrupted"),
         )
@@ -157,7 +119,8 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
     @patch("bookworm.downloader.requests.get")
     def test_successful_download_uses_atomic_replace_into_final_name(self, mock_get):
-        mock_get.return_value = _FakeResponse(chunks=[b"ab", b"cd"])
+        # Verify we write via temp file and publish with a single atomic replace.
+        mock_get.return_value = FakeDownloadResponse(chunks=[b"ab", b"cd"])
 
         with tempfile.TemporaryDirectory() as tmp:
             with patch("bookworm.downloader.os.replace", wraps=downloader.os.replace) as mock_replace:
@@ -176,7 +139,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
     @patch("bookworm.downloader.os.fdopen", side_effect=OSError("disk full"))
     @patch("bookworm.downloader.requests.get")
     def test_raises_filesystem_error_when_write_fails(self, mock_get, mock_fdopen):
-        mock_get.return_value = _FakeResponse()
+        mock_get.return_value = FakeDownloadResponse()
 
         with tempfile.TemporaryDirectory() as tmp:
             target_dir = Path(tmp)
@@ -191,7 +154,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
     @patch("bookworm.downloader.os.replace", side_effect=OSError("replace failed"))
     @patch("bookworm.downloader.requests.get")
     def test_replace_failure_removes_partial_temp_file(self, mock_get, mock_replace):
-        mock_get.return_value = _FakeResponse(chunks=[b"abc"])
+        mock_get.return_value = FakeDownloadResponse(chunks=[b"abc"])
 
         with tempfile.TemporaryDirectory() as tmp:
             target_dir = Path(tmp)
@@ -218,3 +181,4 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

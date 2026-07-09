@@ -1,12 +1,12 @@
 import io
-import sys
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from support import ensure_src_on_path
+
+ensure_src_on_path()
 
 from bookworm import cli
 
@@ -145,3 +145,4 @@ class CliInteractiveLoopTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
