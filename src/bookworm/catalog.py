@@ -75,7 +75,7 @@ def fetch_catalog(on_progress=None, on_warning=None) -> list[Product]:
     created_sessions.append(session)
 
     try:
-        categories = _fetch_categories(session)
+        categories = _fetch_categories(session, on_warning=on_warning)
         total = len(categories)
         products_by_index = {}
         completed = 0
@@ -120,7 +120,7 @@ def fetch_catalog(on_progress=None, on_warning=None) -> list[Product]:
             created_session.close()
 
 
-def _fetch_categories(session):
+def _fetch_categories(session, on_warning=None):
     resp = session.get(CATALOG_URL, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -134,6 +134,10 @@ def _fetch_categories(session):
         if not url.startswith(("http://", "https://")):
             continue
         categories.append({"title": a.get("title", ""), "url": url})
+    if not categories and on_warning:
+        on_warning(
+            "No category anchors found on the catalog page; the page structure may have changed."
+        )
     return categories
 
 
@@ -148,7 +152,8 @@ def _extract_numbers(raw_title):
     return re.findall(ARTICLE_NUMBER_PATTERN, raw_title)
 
 
-def _unique_number_from_text(*parts):
+def _unique_number_or_empty(*parts):
+    """Return the single article number found across all parts, or '' if zero or multiple are found."""
     numbers = set()
     for part in parts:
         if part:
@@ -156,21 +161,22 @@ def _unique_number_from_text(*parts):
     return next(iter(numbers)) if len(numbers) == 1 else ""
 
 
+def _get_previous_sibling_text(sibling) -> str:
+    """Return normalized text from a BeautifulSoup previous sibling, or '' if the sibling is None."""
+    if sibling is None:
+        return ""
+    if hasattr(sibling, "get_text") and callable(sibling.get_text):
+        return sibling.get_text(" ", strip=True)
+    strip_attr = getattr(sibling, "strip", None)
+    return strip_attr() if callable(strip_attr) else str(sibling).strip()
+
+
 def _extract_number_from_link(link, gme_url):
     href = link.get("href", "")
     link_text = link.get_text(" ", strip=True)
     parent_text = link.parent.get_text(" ", strip=True) if link.parent else ""
-
-    previous = link.previous_sibling
-    if previous is None:
-        previous_text = ""
-    elif hasattr(previous, "get_text") and callable(previous.get_text):
-        previous_text = previous.get_text(" ", strip=True)
-    else:
-        strip_attr = getattr(previous, "strip", None)
-        previous_text = strip_attr() if callable(strip_attr) else str(previous).strip()
-
-    return _unique_number_from_text(link_text, href, parent_text, previous_text, gme_url)
+    previous_text = _get_previous_sibling_text(link.previous_sibling)
+    return _unique_number_or_empty(link_text, href, parent_text, previous_text, gme_url)
 
 
 def _fetch_products_from_category(session, category) -> list[Product]:

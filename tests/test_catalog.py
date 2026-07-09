@@ -7,7 +7,12 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
-from bookworm.catalog import _fetch_categories, _fetch_products_from_category
+from bookworm.catalog import (
+    _fetch_categories,
+    _fetch_products_from_category,
+    _get_previous_sibling_text,
+    _unique_number_or_empty,
+)
 
 
 class _FakeResponse:
@@ -273,6 +278,106 @@ class FetchCategoriesFilterTests(unittest.TestCase):
             categories,
             [{"title": "", "url": "https://example.test/no-title"}],
         )
+
+
+class GetPreviousSiblingTextTests(unittest.TestCase):
+    def test_returns_empty_string_for_none(self):
+        self.assertEqual(_get_previous_sibling_text(None), "")
+
+    def test_returns_get_text_result_for_tag_node(self):
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup("<p><span>hello world</span><a></a></p>", "html.parser")
+        a_tag = soup.find("a")
+        sibling = a_tag.previous_sibling  # the <span> tag
+        self.assertEqual(_get_previous_sibling_text(sibling), "hello world")
+
+    def test_returns_stripped_string_for_navigable_string(self):
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup("<p>  plain text  <a></a></p>", "html.parser")
+        a_tag = soup.find("a")
+        sibling = a_tag.previous_sibling  # NavigableString
+        self.assertEqual(_get_previous_sibling_text(sibling), "plain text")
+
+    def test_falls_back_to_str_strip_for_arbitrary_object_without_strip(self):
+        class _NoStrip:
+            def __str__(self):
+                return "  raw  "
+
+        self.assertEqual(_get_previous_sibling_text(_NoStrip()), "raw")
+
+    def test_calls_strip_when_available_and_not_get_text(self):
+        class _HasStrip:
+            def strip(self):
+                return "stripped"
+
+        self.assertEqual(_get_previous_sibling_text(_HasStrip()), "stripped")
+
+
+class UniqueNumberOrEmptyTests(unittest.TestCase):
+    def test_returns_number_when_exactly_one_unique_number_across_parts(self):
+        self.assertEqual(_unique_number_or_empty("Artikel 12345", "12345"), "12345")
+
+    def test_returns_empty_when_no_numbers_found(self):
+        self.assertEqual(_unique_number_or_empty("no digits", "also none"), "")
+
+    def test_returns_empty_when_multiple_distinct_numbers_found(self):
+        self.assertEqual(_unique_number_or_empty("12345", "67890"), "")
+
+    def test_returns_empty_when_no_parts_given(self):
+        self.assertEqual(_unique_number_or_empty(), "")
+
+    def test_ignores_none_and_empty_string_parts(self):
+        self.assertEqual(_unique_number_or_empty(None, "", "54321"), "54321")
+
+    def test_treats_same_number_in_multiple_parts_as_one_unique_number(self):
+        self.assertEqual(_unique_number_or_empty("54321", "54321", "54321"), "54321")
+
+
+class FetchCategoriesDiagnosticsTests(unittest.TestCase):
+    def _make_fake_session(self, html, url="https://example.test/listing"):
+        class _FakeResp:
+            def __init__(self, _html, _url):
+                self.text = _html
+                self.url = _url
+
+            def raise_for_status(self):
+                return None
+
+        class _FakeSess:
+            def get(self_inner, _url, timeout=None):
+                return _FakeResp(html, url)
+
+        return _FakeSess()
+
+    def test_warns_when_no_category_anchors_found(self):
+        session = self._make_fake_session("<html><body><p>No links here.</p></body></html>")
+        warnings = []
+
+        categories = _fetch_categories(session, on_warning=warnings.append)
+
+        self.assertEqual(categories, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No category anchors found", warnings[0])
+
+    def test_does_not_warn_when_categories_are_present(self):
+        html = '''<html><body>
+          <a class="mt-listing-detailed-subpage-title" href="https://example.test/a" title="Alpha">A</a>
+        </body></html>'''
+        session = self._make_fake_session(html)
+        warnings = []
+
+        categories = _fetch_categories(session, on_warning=warnings.append)
+
+        self.assertEqual(len(categories), 1)
+        self.assertEqual(warnings, [])
+
+    def test_does_not_raise_when_no_warning_callback_provided(self):
+        session = self._make_fake_session("<html><body></body></html>")
+        # Should not raise even without a callback
+        categories = _fetch_categories(session)
+        self.assertEqual(categories, [])
 
 
 if __name__ == "__main__":
