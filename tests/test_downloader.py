@@ -179,16 +179,39 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
         mock_get.return_value = _FakeResponse()
 
         with tempfile.TemporaryDirectory() as tmp:
+            target_dir = Path(tmp)
             with self.assertRaisesRegex(OSError, "disk full"):
-                download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+                download_gme("https://ravensburger.cloud/files/game.gme", target_dir)
+
+            self.assertFalse((target_dir / "game.gme").exists())
+            self.assertEqual(list(target_dir.glob(".game.gme.*.part")), [])
 
         mock_fdopen.assert_called_once()
+
+    @patch("bookworm.downloader.os.replace", side_effect=OSError("replace failed"))
+    @patch("bookworm.downloader.requests.get")
+    def test_replace_failure_removes_partial_temp_file(self, mock_get, mock_replace):
+        mock_get.return_value = _FakeResponse(chunks=[b"abc"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target_dir = Path(tmp)
+            with self.assertRaisesRegex(OSError, "replace failed"):
+                download_gme("https://ravensburger.cloud/files/game.gme", target_dir)
+
+            self.assertFalse((target_dir / "game.gme").exists())
+            self.assertEqual(list(target_dir.glob(".game.gme.*.part")), [])
+
+        mock_replace.assert_called_once()
 
     @patch("bookworm.downloader.requests.get", side_effect=requests.Timeout("timed out"))
     def test_raises_network_error_when_request_fails_before_response(self, mock_get):
         with tempfile.TemporaryDirectory() as tmp:
+            target_dir = Path(tmp)
             with self.assertRaisesRegex(requests.Timeout, "timed out"):
-                download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+                download_gme("https://ravensburger.cloud/files/game.gme", target_dir)
+
+            self.assertFalse((target_dir / "game.gme").exists())
+            self.assertEqual(list(target_dir.glob(".game.gme.*.part")), [])
 
         mock_get.assert_called_once()
 

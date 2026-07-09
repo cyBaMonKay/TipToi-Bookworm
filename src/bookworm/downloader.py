@@ -40,6 +40,19 @@ _WINDOWS_RESERVED_NAMES = {
 }
 
 
+def _cleanup_partial_download(temp_path: Path, fd: int | None = None) -> None:
+    if fd is not None:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    try:
+        temp_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def _sanitize_filename(filename: str) -> str:
     filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
     filename = "".join(ch if ord(ch) >= 32 else "_" for ch in filename)
@@ -91,33 +104,38 @@ def download_gme(url: str, target_dir: Path) -> Path:
         suffix=".part",
     )
     temp_path = Path(temp_path_str)
+    fd_to_close: int | None = fd
+    cleanup_needed = True
 
     try:
         with requests.get(url, stream=True, timeout=REQUEST_TIMEOUT) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
 
-            with os.fdopen(fd, "wb") as f, tqdm(
+            with os.fdopen(fd_to_close, "wb") as f, tqdm(
                 desc=filename,
                 total=total,
                 unit="B",
                 unit_scale=True,
                 unit_divisor=PROGRESS_UNIT_DIVISOR,
             ) as bar:
+                fd_to_close = None
                 for chunk in resp.iter_content(chunk_size=STREAM_CHUNK_SIZE):
                     written = f.write(chunk)
                     bar.update(written)
 
         os.replace(temp_path, dest)
-    except Exception:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        try:
-            temp_path.unlink()
-        except FileNotFoundError:
-            pass
+        cleanup_needed = False
+    except requests.RequestException:
+        _cleanup_partial_download(temp_path, fd_to_close)
+        cleanup_needed = False
         raise
+    except OSError:
+        _cleanup_partial_download(temp_path, fd_to_close)
+        cleanup_needed = False
+        raise
+    finally:
+        if cleanup_needed:
+            _cleanup_partial_download(temp_path, fd_to_close)
 
     return dest
