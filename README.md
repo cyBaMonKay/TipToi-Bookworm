@@ -12,19 +12,39 @@ A CLI tool to search and download TipToi® audio files (.gme) directly from the 
 
 ## Setup
 
-Use your project virtual environment to keep the global Python environment clean.
+Use a project virtual environment to keep your global Python installation clean.
 
-From the repository root in Windows PowerShell:
-
-```powershell
-.\.venv\Scripts\python -m pip install -e .
-```
-
-For test-only setup (same dependency source as CI):
+Create and activate a venv from the repository root:
 
 ```powershell
-.\.venv\Scripts\python -m pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install in editable mode for day-to-day local use:
+
+```bash
+python -m pip install -e .
+```
+
+Install from pinned requirements for test parity with CI:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Dependency strategy:
+
+- `pyproject.toml` declares runtime dependency ranges for package installs.
+- `requirements.txt` pins exact versions for reproducible test/CI environments.
+
+If `.venv` already exists and is activated, run the same commands via that interpreter.
+
 
 ## Usage
 
@@ -56,17 +76,23 @@ Subdomains of these hosts are allowed (for example `cdn.ravensburger.de`). Host 
 
 ## Run without installation
 
-From the repository root in Windows PowerShell:
+From the repository root:
 
-```powershell
-python .\run.py
+```bash
+python run.py
 ```
 
 Safe check (does not start the interactive flow):
 
-```powershell
-python .\run.py --help
+```bash
+python run.py --help
 ```
+
+Launcher exit code contract:
+
+- `0`: success (including `--help`)
+- `130`: interrupted (`Ctrl+C`)
+- `1`: launcher or CLI startup failure
 
 ## Tests (canonical command)
 
