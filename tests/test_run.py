@@ -43,10 +43,10 @@ class RunMainBehaviorTests(unittest.TestCase):
         self.assertIn("python run.py [--help]", out.getvalue())
         self.assertIn("Exit codes:", out.getvalue())
 
-    def test_non_help_mode_delegates_to_cli_main(self):
-        fake_cli_main = Mock()
-        fake_cli_module = types.ModuleType("bookworm.cli")
-        fake_cli_module.main = fake_cli_main
+    def test_non_help_mode_delegates_to_runtime_main(self):
+        fake_runtime_main = Mock()
+        fake_runtime_module = types.ModuleType("bookworm.runtime")
+        fake_runtime_module.main = fake_runtime_main
 
         fake_bookworm_package = types.ModuleType("bookworm")
         fake_bookworm_package.__path__ = []
@@ -54,18 +54,21 @@ class RunMainBehaviorTests(unittest.TestCase):
         with patch.object(run.sys, "argv", ["run.py"]):
             with patch.dict(
                 sys.modules,
-                {"bookworm": fake_bookworm_package, "bookworm.cli": fake_cli_module},
+                {
+                    "bookworm": fake_bookworm_package,
+                    "bookworm.runtime": fake_runtime_module,
+                },
                 clear=False,
             ):
                 code = run.main()
 
         self.assertEqual(code, 0)
-        fake_cli_main.assert_called_once_with()
+        fake_runtime_main.assert_called_once_with()
 
-    def test_non_help_mode_returns_integer_from_cli_main(self):
-        fake_cli_main = Mock(return_value=7)
-        fake_cli_module = types.ModuleType("bookworm.cli")
-        fake_cli_module.main = fake_cli_main
+    def test_non_help_mode_returns_integer_from_runtime_main(self):
+        fake_runtime_main = Mock(return_value=7)
+        fake_runtime_module = types.ModuleType("bookworm.runtime")
+        fake_runtime_module.main = fake_runtime_main
 
         fake_bookworm_package = types.ModuleType("bookworm")
         fake_bookworm_package.__path__ = []
@@ -73,18 +76,21 @@ class RunMainBehaviorTests(unittest.TestCase):
         with patch.object(run.sys, "argv", ["run.py"]):
             with patch.dict(
                 sys.modules,
-                {"bookworm": fake_bookworm_package, "bookworm.cli": fake_cli_module},
+                {
+                    "bookworm": fake_bookworm_package,
+                    "bookworm.runtime": fake_runtime_module,
+                },
                 clear=False,
             ):
                 code = run.main()
 
         self.assertEqual(code, 7)
-        fake_cli_main.assert_called_once_with()
+        fake_runtime_main.assert_called_once_with()
 
     def test_non_help_mode_normalizes_system_exit_code(self):
-        fake_cli_main = Mock(side_effect=SystemExit("boom"))
-        fake_cli_module = types.ModuleType("bookworm.cli")
-        fake_cli_module.main = fake_cli_main
+        fake_runtime_main = Mock(side_effect=SystemExit("boom"))
+        fake_runtime_module = types.ModuleType("bookworm.runtime")
+        fake_runtime_module.main = fake_runtime_main
 
         fake_bookworm_package = types.ModuleType("bookworm")
         fake_bookworm_package.__path__ = []
@@ -92,13 +98,16 @@ class RunMainBehaviorTests(unittest.TestCase):
         with patch.object(run.sys, "argv", ["run.py"]):
             with patch.dict(
                 sys.modules,
-                {"bookworm": fake_bookworm_package, "bookworm.cli": fake_cli_module},
+                {
+                    "bookworm": fake_bookworm_package,
+                    "bookworm.runtime": fake_runtime_module,
+                },
                 clear=False,
             ):
                 code = run.main()
 
         self.assertEqual(code, 1)
-        fake_cli_main.assert_called_once_with()
+        fake_runtime_main.assert_called_once_with()
 
 
 if __name__ == "__main__":

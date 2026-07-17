@@ -1,4 +1,4 @@
-"""Run bookworm CLI from repository root without installation."""
+"""Run TipToi-Bookworm from repository root without installation."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def main() -> int:
     # Keep a safe help mode for uninstalled repo execution.
     if len(sys.argv) > 1 and sys.argv[1] in {"-h", "--help"}:
         print("TipToi-Bookworm repository launcher")
-        print("Run the interactive CLI directly from this checkout.")
+        print("Run the interactive downloader directly from this checkout.")
         print()
         print("Usage:")
         print("  python run.py [--help]")
@@ -43,20 +43,20 @@ def main() -> int:
         print("Exit codes:")
         print("  0   success (including --help)")
         print("  130 interrupted (Ctrl+C)")
-        print("  1   launcher or CLI startup failure")
+        print("  1   launcher or runtime startup failure")
         return EXIT_OK
 
-    from bookworm.cli import main as cli_main
+    from bookworm.runtime import main as runtime_main
 
     try:
-        cli_result = cli_main()
+        runtime_result = runtime_main()
     except KeyboardInterrupt:
         return EXIT_INTERRUPTED
     except SystemExit as exc:
         return _normalize_exit_code(exc.code)
 
-    if isinstance(cli_result, int):
-        return cli_result
+    if isinstance(runtime_result, int):
+        return runtime_result
     return EXIT_OK
 
 

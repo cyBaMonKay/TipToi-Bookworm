@@ -1,6 +1,7 @@
-"""TipToi-Bookworm CLI — search and download TipToi audio files from Ravensburger."""
+"""Interactive TipToi-Bookworm runtime for repository execution."""
 
-import sys
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -9,6 +10,9 @@ import requests
 from bookworm.catalog import fetch_catalog
 from bookworm.downloader import download_gme, is_official_source
 from bookworm.types import Product
+
+EXIT_OK = 0
+EXIT_FAILURE = 1
 
 QUIT_COMMAND = "q"
 BACK_COMMAND = "b"
@@ -22,7 +26,7 @@ BANNER = r"""
  _____ _     _____     _   ___            _
 |_   _(_)_ _|_   _|__ (_) | _ ) ___  ___ | |____ __ _____ _ _ _ __
   | | | | '_ \| |/ _ \| | | _ \/ _ \/ _ \| / /\ V  V / _ \ '_| '  \
-  |_| |_| .__/|_|\___/|_| |___/\___/\___/|_\_\ \_/\_/\___/_| |_|_|_|
+  |_| |_| .__/|_|\___/|_| |___/\___/\___/|_\_\\_/\_/\___/_| |_|_|_|
         |_|
 """
 
@@ -56,9 +60,10 @@ def _load_catalog() -> list[Product]:
 def _search(products: list[Product], term: str) -> list[Product]:
     term_lower = term.lower()
     return [
-        p
-        for p in products
-        if term_lower in p["title"].lower() or term_lower in p.get("number", "").lower()
+        product
+        for product in products
+        if term_lower in product["title"].lower()
+        or term_lower in product.get("number", "").lower()
     ]
 
 
@@ -81,13 +86,13 @@ def _parse_selection(selection: str, result_count: int) -> SelectionParseResult:
         return {"action": "back", "index": None}
 
     try:
-        idx = int(selection) - 1
-        if idx < 0 or idx >= result_count:
+        index = int(selection) - 1
+        if index < 0 or index >= result_count:
             raise ValueError
     except ValueError:
         return {"action": "invalid", "index": None}
 
-    return {"action": "selected", "index": idx}
+    return {"action": "selected", "index": index}
 
 
 def _confirm_and_download(chosen: Product) -> bool:
@@ -105,32 +110,32 @@ def _confirm_and_download(chosen: Product) -> bool:
         return True
 
     try:
-        dest = download_gme(chosen["gme"], Path.cwd())
-        print(f"\n  ✔ Saved to {dest}\n")
+        destination = download_gme(chosen["gme"], Path.cwd())
+        print(f"\n  ✔ Saved to {destination}\n")
     except (requests.RequestException, OSError, ValueError) as exc:
         print(f"\n  ✘ Download failed: {exc}\n")
     return True
 
 
-def main():
+def main() -> int:
     print(BANNER)
 
     try:
         products = _load_catalog()
     except (requests.RequestException, OSError) as exc:
         print(f"\n  Error fetching catalog: {exc}")
-        sys.exit(1)
+        return EXIT_FAILURE
 
     while True:
         try:
             query_result = _prompt_query()
         except (EOFError, KeyboardInterrupt):
             print(f"\n{BYE_MESSAGE}")
-            break
+            return EXIT_OK
 
         if query_result["action"] == "quit":
             print(BYE_MESSAGE)
-            break
+            return EXIT_OK
         if query_result["action"] == "continue":
             continue
 
@@ -141,16 +146,16 @@ def main():
             continue
 
         print(f"\n  Found {len(results)} result(s):\n")
-        for i, item in enumerate(results, 1):
+        for index, item in enumerate(results, 1):
             number_info = f" ({item['number']})" if item["number"] else ""
-            print(f"    [{i}] {item['title']}{number_info}")
+            print(f"    [{index}] {item['title']}{number_info}")
         print()
 
         try:
             selection = _prompt_selection()
         except (EOFError, KeyboardInterrupt):
             print(f"\n{BYE_MESSAGE}")
-            break
+            return EXIT_OK
 
         selection_result = _parse_selection(selection, len(results))
 
@@ -170,8 +175,4 @@ def main():
             _confirm_and_download(results[selected_index])
         except (EOFError, KeyboardInterrupt):
             print(f"\n{BYE_MESSAGE}")
-            break
-
-
-if __name__ == "__main__":
-    main()
+            return EXIT_OK
