@@ -1,12 +1,12 @@
 # TipToi-Bookworm
 
-A CLI tool to search and download TipToi® audio files (.gme) directly from the official Ravensburger servers.
+A script-only tool to search and download TipToi® audio files (.gme) directly from the official Ravensburger servers.
 
 ## Features
 
 - Scrapes the official [Ravensburger service page](https://service.ravensburger.de/tiptoi%C2%AE/tiptoi%C2%AE_Audiodateien) for the product catalog
 - Search by product name or article number
-- Downloads .gme files exclusively from official Ravensburger domains (`ravensburger.cloud`, `ravensburger.de`, `ravensburger.info`) with validation enforced in both CLI and downloader
+- Downloads .gme files exclusively from official Ravensburger domains (`ravensburger.cloud`, `ravensburger.de`, `ravensburger.info`) with validation enforced in both the interactive runtime and downloader
 - Shows a progress bar during download
 - Saves files to the current working directory
 
@@ -26,22 +26,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Install in editable mode for day-to-day local use:
-
-```bash
-python -m pip install -e .
-```
-
-Install from pinned requirements for test parity with CI:
+Install the pinned runtime dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
-
-Dependency strategy:
-
-- `pyproject.toml` declares runtime dependency ranges for package installs.
-- `requirements.txt` pins exact versions for reproducible test/CI environments.
 
 If `.venv` already exists and is activated, run the same commands via that interpreter.
 
@@ -49,22 +38,28 @@ If `.venv` already exists and is activated, run the same commands via that inter
 ## Usage
 
 ```bash
-bookworm
+python run.py
 ```
 
-The CLI will:
+The script will:
 
 1. Fetch the latest product catalog from Ravensburger
 2. Prompt you to enter a search term
 3. Display matching results
 4. Let you pick one and confirm the download
 
+Safe check (does not start the interactive flow):
+
+```bash
+python run.py --help
+```
+
 ## Download source validation
 
 For defense in depth, URL host validation is enforced in two layers:
 
-1. **CLI precheck (`bookworm.cli`)**: warns and skips entries that are not hosted on official Ravensburger domains.
-2. **Downloader enforcement (`bookworm.downloader.download_gme`)**: rejects non-official hosts with a `ValueError`, even when called directly outside the CLI flow.
+1. **Runtime precheck (`bookworm.runtime`)**: warns and skips entries that are not hosted on official Ravensburger domains.
+2. **Downloader enforcement (`bookworm.downloader.download_gme`)**: rejects non-official hosts with a `ValueError`, even when called directly outside the interactive runtime flow.
 
 Allowed host suffixes:
 
@@ -74,7 +69,7 @@ Allowed host suffixes:
 
 Subdomains of these hosts are allowed (for example `cdn.ravensburger.de`). Host checks are case-insensitive, reject malformed URLs, and do not treat trailing-dot hostnames as official.
 
-## Run without installation
+## Script Entrypoint
 
 From the repository root:
 
@@ -92,7 +87,7 @@ Launcher exit code contract:
 
 - `0`: success (including `--help`)
 - `130`: interrupted (`Ctrl+C`)
-- `1`: launcher or CLI startup failure
+- `1`: launcher or runtime startup failure
 
 ## Tests (canonical command)
 

@@ -109,6 +109,28 @@ class RunMainBehaviorTests(unittest.TestCase):
         self.assertEqual(code, 1)
         fake_runtime_main.assert_called_once_with()
 
+    def test_non_help_mode_returns_interrupted_code_for_keyboard_interrupt(self):
+        fake_runtime_main = Mock(side_effect=KeyboardInterrupt)
+        fake_runtime_module = types.ModuleType("bookworm.runtime")
+        fake_runtime_module.main = fake_runtime_main
+
+        fake_bookworm_package = types.ModuleType("bookworm")
+        fake_bookworm_package.__path__ = []
+
+        with patch.object(run.sys, "argv", ["run.py"]):
+            with patch.dict(
+                sys.modules,
+                {
+                    "bookworm": fake_bookworm_package,
+                    "bookworm.runtime": fake_runtime_module,
+                },
+                clear=False,
+            ):
+                code = run.main()
+
+        self.assertEqual(code, run.EXIT_INTERRUPTED)
+        fake_runtime_main.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()
