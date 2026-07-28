@@ -38,7 +38,7 @@ If `.venv` already exists and is activated, run the same commands via that inter
 ## Usage
 
 ```bash
-python run.py
+python bookworm.py
 ```
 
 The script will:
@@ -51,14 +51,12 @@ The script will:
 Safe check (does not start the interactive flow):
 
 ```bash
-python run.py --help
+python bookworm.py --help
 ```
-
-## Download source validation
 
 For defense in depth, URL host validation is enforced in two layers:
 
-1. **Runtime precheck (`bookworm.runtime`)**: warns and skips entries that are not hosted on official Ravensburger domains.
+1. **Runtime precheck (`bookworm`)**: warns and skips entries that are not hosted on official Ravensburger domains.
 2. **Downloader enforcement (`bookworm.downloader.download_gme`)**: rejects non-official hosts with a `ValueError`, even when called directly outside the interactive runtime flow.
 
 Allowed host suffixes:
@@ -74,13 +72,13 @@ Subdomains of these hosts are allowed (for example `cdn.ravensburger.de`). Host 
 From the repository root:
 
 ```bash
-python run.py
+python bookworm.py
 ```
 
 Safe check (does not start the interactive flow):
 
 ```bash
-python run.py --help
+python bookworm.py --help
 ```
 
 Launcher exit code contract:

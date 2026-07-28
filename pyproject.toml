@@ -1,4 +1,4 @@
 [tool.bookworm]
 execution = "script-only"
-entrypoint = "python run.py"
+entrypoint = "python bookworm.py"
 dependency_source = "requirements.txt"
