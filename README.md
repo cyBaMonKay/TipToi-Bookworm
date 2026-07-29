@@ -54,6 +54,12 @@ Safe check (does not start the interactive flow):
 python bookworm.py --help
 ```
 
+Launcher exit code contract:
+
+- `0`: success (including `--help`)
+- `130`: interrupted (`Ctrl+C`)
+- `1`: launcher or runtime startup failure
+
 For defense in depth, URL host validation is enforced in two layers:
 
 1. **Runtime precheck (`bookworm`)**: warns and skips entries that are not hosted on official Ravensburger domains.
@@ -66,26 +72,6 @@ Allowed host suffixes:
 - `ravensburger.info`
 
 Subdomains of these hosts are allowed (for example `cdn.ravensburger.de`). Host checks are case-insensitive, reject malformed URLs, and do not treat trailing-dot hostnames as official.
-
-## Script Entrypoint
-
-From the repository root:
-
-```bash
-python bookworm.py
-```
-
-Safe check (does not start the interactive flow):
-
-```bash
-python bookworm.py --help
-```
-
-Launcher exit code contract:
-
-- `0`: success (including `--help`)
-- `130`: interrupted (`Ctrl+C`)
-- `1`: launcher or runtime startup failure
 
 ## Tests (canonical command)
 
