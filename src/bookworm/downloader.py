@@ -13,6 +13,7 @@ ALLOWED_HOSTS = ("ravensburger.cloud", "ravensburger.de", "ravensburger.info")
 REQUEST_TIMEOUT = 30
 STREAM_CHUNK_SIZE = 8192
 PROGRESS_UNIT_DIVISOR = 1024
+PROGRESS_BAR_FORMAT = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
 
 _WINDOWS_RESERVED_NAMES = {
     "CON",
@@ -118,6 +119,7 @@ def download_gme(url: str, target_dir: Path) -> Path:
                 unit="B",
                 unit_scale=True,
                 unit_divisor=PROGRESS_UNIT_DIVISOR,
+                bar_format=PROGRESS_BAR_FORMAT,
             ) as bar:
                 fd_to_close = None
                 for chunk in resp.iter_content(chunk_size=STREAM_CHUNK_SIZE):

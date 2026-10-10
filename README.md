@@ -7,7 +7,7 @@ A script-only tool to search and download TipToi® audio files (.gme) directly f
 - Scrapes the official [Ravensburger service page](https://service.ravensburger.de/tiptoi%C2%AE/tiptoi%C2%AE_Audiodateien) for the product catalog
 - Search by product name or article number
 - Downloads .gme files exclusively from official Ravensburger domains (`ravensburger.cloud`, `ravensburger.de`, `ravensburger.info`) with validation enforced in both the interactive runtime and downloader
-- Shows a progress bar during download
+- Shows a progress bar during download with elapsed time, estimated time remaining, and transfer rate
 - Saves files to the current working directory
 
 ## Setup

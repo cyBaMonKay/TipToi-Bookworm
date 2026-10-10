@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import requests
 
@@ -96,6 +96,21 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             dest = download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
             self.assertEqual(dest.read_bytes(), b"abc")
 
+    @patch("bookworm.downloader.tqdm")
+    @patch("bookworm.downloader.requests.get")
+    def test_uses_elapsed_and_remaining_time_progress_format(self, mock_get, mock_tqdm):
+        mock_get.return_value = FakeDownloadResponse(chunks=[b"ab", b"c"])
+        mock_tqdm.return_value.__enter__.return_value = Mock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            download_gme("https://ravensburger.cloud/files/game.gme", Path(tmp))
+
+        self.assertEqual(
+            mock_tqdm.call_args.kwargs["bar_format"],
+            downloader.PROGRESS_BAR_FORMAT,
+        )
+        self.assertIn("{remaining}", downloader.PROGRESS_BAR_FORMAT)
+
     @patch("bookworm.downloader.requests.get")
     def test_interrupted_stream_never_leaves_final_or_temp_file(self, mock_get):
         # Simulate mid-stream failure and assert cleanup of both final and temp artifacts.
@@ -181,4 +196,3 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
