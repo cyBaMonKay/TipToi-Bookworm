@@ -5,12 +5,20 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from support import FakeDownloadResponse, ensure_src_on_path
+from support import (
+    FakeDownloadResponse,
+    ScriptedTransport,
+    ensure_src_on_path,
+    payload_route,
+    redirect_route,
+)
 
 ensure_src_on_path()
 
 import bookworm.downloader as downloader
 from bookworm.downloader import download_gme, is_official_source
+
+OFFICIAL_URL = "https://ravensburger.cloud/files/game.gme"
 
 
 class DownloadFilenameSafetyTests(unittest.TestCase):
@@ -29,7 +37,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             with self.subTest(scenario=scenario, url=url):
                 self.assertEqual(is_official_source(url), expected)
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_uses_path_basename_not_query_or_fragment(self, mock_get):
         mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
@@ -39,7 +47,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             )
         self.assertEqual(dest.name, "game name.gme")
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_sanitizes_windows_invalid_characters(self, mock_get):
         mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
@@ -49,35 +57,35 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             )
         self.assertEqual(dest.name, "ba_d__name_.gme")
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_fallback_filename_when_path_basename_empty(self, mock_get):
         mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
             dest = download_gme("https://ravensburger.cloud/?x=1", Path(tmp))
         self.assertEqual(dest.name, "download.gme")
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_rejects_non_official_hosts(self, mock_get):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "non-official host"):
                 download_gme("https://example.test/files/game.gme", Path(tmp))
         mock_get.assert_not_called()
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_rejects_non_gme_paths_on_official_hosts(self, mock_get):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, r"expected a \.gme file"):
                 download_gme("https://ravensburger.cloud/files/game.txt", Path(tmp))
         mock_get.assert_not_called()
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_allows_official_subdomains(self, mock_get):
         mock_get.return_value = FakeDownloadResponse()
         with tempfile.TemporaryDirectory() as tmp:
             dest = download_gme("https://cdn.ravensburger.de/files/game.gme", Path(tmp))
         self.assertEqual(dest.name, "game.gme")
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_closes_response_when_request_fails(self, mock_get):
         response = FakeDownloadResponse(status_error=requests.HTTPError("boom"))
         mock_get.return_value = response
@@ -88,7 +96,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
         self.assertTrue(response.closed)
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_skips_keep_alive_empty_chunks_without_error(self, mock_get):
         mock_get.return_value = FakeDownloadResponse(chunks=[b"ab", b"", b"c", b""])
 
@@ -97,7 +105,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             self.assertEqual(dest.read_bytes(), b"abc")
 
     @patch("bookworm.downloader.tqdm")
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_uses_elapsed_and_remaining_time_progress_format(self, mock_get, mock_tqdm):
         mock_get.return_value = FakeDownloadResponse(chunks=[b"ab", b"c"])
         mock_tqdm.return_value.__enter__.return_value = Mock()
@@ -111,7 +119,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
         )
         self.assertIn("{remaining}", downloader.PROGRESS_BAR_FORMAT)
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_interrupted_stream_never_leaves_final_or_temp_file(self, mock_get):
         # Simulate mid-stream failure and assert cleanup of both final and temp artifacts.
         response = FakeDownloadResponse(
@@ -132,7 +140,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
         self.assertTrue(response.closed)
 
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_successful_download_uses_atomic_replace_into_final_name(self, mock_get):
         # Verify we write via temp file and publish with a single atomic replace.
         mock_get.return_value = FakeDownloadResponse(chunks=[b"ab", b"cd"])
@@ -152,7 +160,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             self.assertFalse(Path(source_tmp).exists())
 
     @patch("bookworm.downloader.os.fdopen", side_effect=OSError("disk full"))
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_raises_filesystem_error_when_write_fails(self, mock_get, mock_fdopen):
         mock_get.return_value = FakeDownloadResponse()
 
@@ -167,7 +175,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
         mock_fdopen.assert_called_once()
 
     @patch("bookworm.downloader.os.replace", side_effect=OSError("replace failed"))
-    @patch("bookworm.downloader.requests.get")
+    @patch("bookworm.downloader.requests.Session.get")
     def test_replace_failure_removes_partial_temp_file(self, mock_get, mock_replace):
         mock_get.return_value = FakeDownloadResponse(chunks=[b"abc"])
 
@@ -181,7 +189,7 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
 
         mock_replace.assert_called_once()
 
-    @patch("bookworm.downloader.requests.get", side_effect=requests.Timeout("timed out"))
+    @patch("bookworm.downloader.requests.Session.get", side_effect=requests.Timeout("timed out"))
     def test_raises_network_error_when_request_fails_before_response(self, mock_get):
         with tempfile.TemporaryDirectory() as tmp:
             target_dir = Path(tmp)
@@ -192,6 +200,103 @@ class DownloadFilenameSafetyTests(unittest.TestCase):
             self.assertEqual(list(target_dir.glob(".game.gme.*.part")), [])
 
         mock_get.assert_called_once()
+
+
+class DownloadTransportPolicyTests(unittest.TestCase):
+    """Run requests' real session logic over a scripted, offline HTTPAdapter."""
+
+    def _download(self, transport, url, target_dir):
+        with patch("requests.adapters.HTTPAdapter.send", new=transport.send):
+            return download_gme(url, target_dir)
+
+    def test_follows_official_redirects_resolving_relative_locations(self):
+        transport = ScriptedTransport({
+            OFFICIAL_URL: redirect_route("../cdn/v2/game.gme", status=301),
+            "https://ravensburger.cloud/cdn/v2/game.gme": redirect_route(
+                "//cdn.ravensburger.de/blob?id=7", status=307
+            ),
+            "https://cdn.ravensburger.de/blob?id=7": payload_route(b"GAME"),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = self._download(transport, OFFICIAL_URL, Path(tmp))
+            self.assertEqual(dest.name, "game.gme")
+            self.assertEqual(dest.read_bytes(), b"GAME")
+
+        self.assertEqual(
+            transport.calls,
+            [
+                OFFICIAL_URL,
+                "https://ravensburger.cloud/cdn/v2/game.gme",
+                "https://cdn.ravensburger.de/blob?id=7",
+            ],
+        )
+
+    def test_rejects_disallowed_targets_without_contacting_them_or_touching_files(self):
+        plaintext_url = "http://ravensburger.cloud/files/game.gme"
+        cases = [
+            (
+                "off-domain redirect",
+                OFFICIAL_URL,
+                {OFFICIAL_URL: redirect_route("https://example.invalid/payload.gme")},
+                "redirect to non-official host: example.invalid",
+                [OFFICIAL_URL],
+            ),
+            (
+                "HTTPS-to-HTTP redirect downgrade",
+                OFFICIAL_URL,
+                {OFFICIAL_URL: redirect_route(plaintext_url)},
+                "redirect to non-HTTPS URL",
+                [OFFICIAL_URL],
+            ),
+            (
+                "plaintext initial URL",
+                plaintext_url,
+                {},
+                "download from non-HTTPS URL",
+                [],
+            ),
+        ]
+
+        for scenario, url, routes, error, expected_calls in cases:
+            with self.subTest(scenario=scenario):
+                transport = ScriptedTransport(routes)
+                with tempfile.TemporaryDirectory() as tmp:
+                    target_dir = Path(tmp)
+                    existing = target_dir / "game.gme"
+                    existing.write_bytes(b"OLD")
+
+                    with self.assertRaisesRegex(ValueError, error):
+                        self._download(transport, url, target_dir)
+
+                    self.assertEqual(existing.read_bytes(), b"OLD")
+                    self.assertEqual(list(target_dir.iterdir()), [existing])
+                self.assertEqual(transport.calls, expected_calls)
+
+    def test_redirect_count_is_bounded(self):
+        def hop_url(hop):
+            return f"https://ravensburger.cloud/hop{hop}.gme"
+
+        for redirects, should_succeed in [
+            (downloader.MAX_REDIRECTS, True),
+            (downloader.MAX_REDIRECTS + 1, False),
+        ]:
+            with self.subTest(redirects=redirects):
+                routes = {hop_url(hop): redirect_route(f"/hop{hop + 1}.gme") for hop in range(redirects)}
+                routes[hop_url(redirects)] = payload_route(b"GAME")
+                transport = ScriptedTransport(routes)
+
+                with tempfile.TemporaryDirectory() as tmp:
+                    target_dir = Path(tmp)
+                    if should_succeed:
+                        dest = self._download(transport, hop_url(0), target_dir)
+                        self.assertEqual(dest.read_bytes(), b"GAME")
+                    else:
+                        with self.assertRaises(requests.TooManyRedirects):
+                            self._download(transport, hop_url(0), target_dir)
+                        self.assertEqual(list(target_dir.iterdir()), [])
+
+                self.assertEqual(len(transport.calls), downloader.MAX_REDIRECTS + 1)
 
 
 if __name__ == "__main__":

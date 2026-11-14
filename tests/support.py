@@ -1,5 +1,8 @@
+import io
 import sys
 from pathlib import Path
+
+import requests
 
 
 def ensure_src_on_path():
@@ -39,6 +42,8 @@ class RaisingSession:
 
 
 class FakeDownloadResponse:
+    is_redirect = False
+
     def __init__(self, body=b"abc", status_error=None, chunks=None, iter_error=None):
         self._body = body
         self._chunks = chunks
@@ -76,4 +81,41 @@ class FakeDownloadResponse:
 
         if self._iter_error is not None:
             raise self._iter_error
+
+
+class ScriptedTransport:
+    """Replacement for ``HTTPAdapter.send`` that replays canned responses by URL.
+
+    Patch with ``patch("requests.adapters.HTTPAdapter.send", new=transport.send)``
+    so requests' real session and redirect handling run without network access.
+    Unscripted URLs raise ``AssertionError`` to flag unexpected requests.
+    """
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.calls = []
+        self.responses = []
+
+    def send(self, request, **kwargs):
+        self.calls.append(request.url)
+        if request.url not in self.routes:
+            raise AssertionError(f"Unexpected request to {request.url}")
+
+        status, headers, body = self.routes[request.url]
+        response = requests.Response()
+        response.request = request
+        response.url = request.url
+        response.status_code = status
+        response.headers.update(headers)
+        response.raw = io.BytesIO(body)
+        self.responses.append(response)
+        return response
+
+
+def redirect_route(location, status=302):
+    return status, {"Location": location}, b""
+
+
+def payload_route(body):
+    return 200, {"Content-Length": str(len(body))}, body
 

@@ -4,12 +4,14 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from tqdm import tqdm
 
 ALLOWED_HOSTS = ("ravensburger.cloud", "ravensburger.de", "ravensburger.info")
+ALLOWED_SCHEME = "https"
+MAX_REDIRECTS = 5
 REQUEST_TIMEOUT = 30
 STREAM_CHUNK_SIZE = 8192
 PROGRESS_UNIT_DIVISOR = 1024
@@ -87,10 +89,42 @@ def is_official_source(url: str) -> bool:
     return any(host == allowed or host.endswith("." + allowed) for allowed in ALLOWED_HOSTS)
 
 
-def download_gme(url: str, target_dir: Path) -> Path:
-    """Download a .gme file to *target_dir* and return the resulting path."""
+def _require_allowed_url(url: str, refusal: str) -> None:
+    parts = urlsplit(url)
     if not is_official_source(url):
-        raise ValueError("Refusing download from non-official host")
+        raise ValueError(f"{refusal} non-official host: {parts.hostname or url}")
+    if parts.scheme != ALLOWED_SCHEME:
+        raise ValueError(f"{refusal} non-HTTPS URL: {url}")
+
+
+def _open_download_stream(session: requests.Session, url: str) -> requests.Response:
+    """GET *url*, following at most MAX_REDIRECTS redirects manually.
+
+    Each redirect target is validated before it is requested, so a disallowed
+    host or scheme is never contacted.
+    """
+    current_url = url
+    for _ in range(MAX_REDIRECTS + 1):
+        resp = session.get(
+            current_url, stream=True, timeout=REQUEST_TIMEOUT, allow_redirects=False
+        )
+        location = session.get_redirect_target(resp)
+        if location is None:
+            return resp
+
+        resp.close()
+        current_url = urljoin(current_url, location)
+        _require_allowed_url(current_url, "Refusing redirect to")
+
+    raise requests.TooManyRedirects(f"Exceeded {MAX_REDIRECTS} redirects")
+
+
+def download_gme(url: str, target_dir: Path) -> Path:
+    """Download a .gme file to *target_dir* and return the resulting path.
+
+    The URL and every redirect target must use HTTPS on an official host.
+    """
+    _require_allowed_url(url, "Refusing download from")
 
     filename = _derive_safe_filename(url)
     _validate_gme_filename(filename)
@@ -109,7 +143,7 @@ def download_gme(url: str, target_dir: Path) -> Path:
     cleanup_needed = True
 
     try:
-        with requests.get(url, stream=True, timeout=REQUEST_TIMEOUT) as resp:
+        with requests.Session() as session, _open_download_stream(session, url) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
 
