@@ -51,6 +51,166 @@ class CatalogNumberMappingTests(unittest.TestCase):
 
         self.assertEqual(products[0]["number"], "")
 
+    def test_uses_unique_page_title_number_when_link_has_no_number(self):
+        html = """
+        <html><body>
+          <a href="/audio/story.gme"><img src="cover.png"></a>
+        </body></html>
+        """
+        session = FakeHtmlSession(html)
+        category = {
+            "title": "tiptoi\u00ae Audiodatei Story 00758",
+            "url": "https://service.ravensburger.de/story",
+        }
+
+        products = _fetch_products_from_category(session, category)
+
+        self.assertEqual(products[0]["number"], "00758")
+
+    def test_prefers_confident_link_number_over_unique_page_title_number(self):
+        html = """
+        <html><body>
+          <a href="/audio/story-67890.gme">Geschichte 67890</a>
+        </body></html>
+        """
+        session = FakeHtmlSession(html)
+        category = {
+            "title": "tiptoi\u00ae Audiodatei Story 12345",
+            "url": "https://service.ravensburger.de/story",
+        }
+
+        products = _fetch_products_from_category(session, category)
+
+        self.assertEqual(products[0]["number"], "67890")
+
+    def test_prefers_unique_surrounding_context_number_over_page_title_number(self):
+        products = _fetch_products_from_category(
+            FakeHtmlSession(
+                '<p>Artikel 54321 '
+                '<a href="/audio/story.gme"><img src="cover.png"></a></p>'
+            ),
+            {
+                "title": "tiptoi\u00ae Audiodatei Story 12345",
+                "url": "https://service.ravensburger.de/story",
+            },
+        )
+
+        self.assertEqual(products[0]["number"], "54321")
+
+    def test_prefers_explicit_link_numbers_over_surrounding_numbers(self):
+        for number in ("00001", "00758", "54321", "99999"):
+            for anchor in (
+                f'<a href="/audio/story.gme">Story {number}</a>',
+                f'<a href="/audio/story-{number}.gme"><img src="cover.png"></a>',
+                f'<a href="/audio/story-{number}.gme">Story {number}</a>',
+            ):
+                with self.subTest(number=number, anchor=anchor):
+                    products = _fetch_products_from_category(
+                        FakeHtmlSession(f"<p>Artikel 12345 {anchor}</p>"),
+                        {"title": "Story 12345", "url": "https://service.ravensburger.de/story"},
+                    )
+
+                    self.assertEqual(products[0]["number"], number)
+
+    def test_does_not_replace_conflicting_link_numbers_with_context_or_title(self):
+        for anchor in (
+            '<a href="/audio/story.gme">Story 12345 / 67890</a>',
+            '<a href="/audio/story-12345-67890.gme"><img src="cover.png"></a>',
+            '<a href="/audio/story-12345.gme">Story 67890</a>',
+        ):
+            with self.subTest(anchor=anchor):
+                products = _fetch_products_from_category(
+                    FakeHtmlSession(f"<p>Artikel 12345 {anchor}</p>"),
+                    {"title": "Story 12345", "url": "https://service.ravensburger.de/story"},
+                )
+
+                self.assertEqual(products[0]["number"], "")
+
+    def test_does_not_replace_conflicting_context_with_title_number(self):
+        products = _fetch_products_from_category(
+            FakeHtmlSession(
+                '<p>Artikel 12345 <span>67890</span>'
+                '<a href="/audio/story.gme"><img src="cover.png"></a></p>'
+            ),
+            {"title": "Story 12345", "url": "https://service.ravensburger.de/story"},
+        )
+
+        self.assertEqual(products[0]["number"], "")
+
+    def test_maps_explicit_numbers_in_shared_parent_independently(self):
+        products = _fetch_products_from_category(
+            FakeHtmlSession(
+                '<div><a href="/audio/first.gme">First 12345</a>'
+                '<a href="/audio/second.gme">Second 67890</a></div>'
+            ),
+            {"title": "Stories 12345 67890", "url": "https://service.ravensburger.de/stories"},
+        )
+
+        self.assertEqual([p["number"] for p in products], ["12345", "67890"])
+
+    def test_does_not_assign_other_products_number_to_unnumbered_download(self):
+        for html, first_number in (
+            (
+                '<div><a href="/audio/first.gme">First 12345</a>'
+                '<a href="/audio/second.gme"><img src="cover.png"></a></div>',
+                "12345",
+            ),
+            (
+                '<div><p><a href="/audio/first.gme">First 12345</a></p>'
+                '<a href="/audio/second.gme"><img src="cover.png"></a></div>',
+                "12345",
+            ),
+            (
+                '<div><a href="/audio/first-67890.gme"><img src="first.png"></a></div>'
+                '<div><a href="/audio/second.gme"><img src="second.png"></a></div>',
+                "67890",
+            ),
+        ):
+            with self.subTest(html=html):
+                products = _fetch_products_from_category(
+                    FakeHtmlSession(html),
+                    {"title": "Stories 12345", "url": "https://service.ravensburger.de/stories"},
+                )
+
+                self.assertEqual([p["number"] for p in products], [first_number, ""])
+
+    def test_title_fallback_requires_one_distinct_download(self):
+        for second_href, expected in (
+            ("/audio/first.gme", ["00758", "00758"]),
+            ("/audio/second.gme", ["", ""]),
+        ):
+            with self.subTest(second_href=second_href):
+                products = _fetch_products_from_category(
+                    FakeHtmlSession(
+                        '<a href="/audio/first.gme"><img src="cover.png"></a>'
+                        f'<a href="{second_href}">Download</a>'
+                    ),
+                    {"title": "Story 00758 00758", "url": "https://service.ravensburger.de/story"},
+                )
+
+                self.assertEqual([p["number"] for p in products], expected)
+
+    def test_keeps_shared_context_for_repeated_links_to_same_download(self):
+        products = _fetch_products_from_category(
+            FakeHtmlSession(
+                '<div>Artikel 54321 <a href="/audio/story.gme">Download</a>'
+                '<a href="https://service.ravensburger.de/audio/story.gme">Download again</a></div>'
+            ),
+            {"title": "Story", "url": "https://service.ravensburger.de/story"},
+        )
+
+        self.assertEqual([p["number"] for p in products], ["54321", "54321"])
+
+    def test_does_not_extract_article_numbers_from_longer_digit_sequences(self):
+        for title, expected in (("Story 00758", "00758"), ("Story 123456", "")):
+            with self.subTest(title=title):
+                products = _fetch_products_from_category(
+                    FakeHtmlSession('<a href="/audio/story-123456.gme">Download</a>'),
+                    {"title": title, "url": "https://service.ravensburger.de/story"},
+                )
+
+                self.assertEqual(products[0]["number"], expected)
+
     def test_extracts_number_from_previous_sibling_tag_without_crashing(self):
         html = """
         <html><body>

@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 import requests
 
+from support import FakeHtmlSession
+
 
 def _load_bookworm_script():
     """Load bookworm.py by file path to avoid collision with the src/bookworm/ package."""
@@ -19,6 +21,8 @@ def _load_bookworm_script():
 
 
 bw = _load_bookworm_script()
+
+from bookworm.catalog import _fetch_products_from_category
 
 
 class BookwormPathBootstrapTests(unittest.TestCase):
@@ -85,6 +89,37 @@ class BookwormMainBehaviorTests(unittest.TestCase):
                 code = bw.main()
 
         self.assertEqual(code, bw.EXIT_INTERRUPTED)
+
+
+class ArticleNumberSearchRegressionTests(unittest.TestCase):
+    def test_searches_image_only_link_product_by_page_title_number(self):
+        products = _fetch_products_from_category(
+            FakeHtmlSession(
+                '<a href="https://ravensburger.cloud/story.gme">'
+                '<img src="cover.png"></a>'
+            ),
+            {
+                "title": "tiptoi\u00ae Audiodatei Story 00758",
+                "url": "https://service.ravensburger.de/story",
+            },
+        )
+
+        self.assertEqual(products[0]["number"], "00758")
+        self.assertEqual(bw._search(products, "00758"), products)
+
+    def test_search_uses_explicit_link_numbers_without_guessing_ambiguous_mappings(self):
+        products = _fetch_products_from_category(
+            FakeHtmlSession(
+                '<div>Artikel 12345 <a href="/audio/first.gme">First 67890</a></div>'
+                '<div>Artikel 12345 <a href="/audio/second.gme">Second 12345 / 67890</a></div>'
+                '<div><a href="/audio/third.gme"><img src="cover.png"></a></div>'
+            ),
+            {"title": "Stories 12345", "url": "https://service.ravensburger.de/stories"},
+        )
+
+        self.assertEqual([p["number"] for p in products], ["67890", "", ""])
+        self.assertEqual(bw._search(products, "67890"), [products[0]])
+        self.assertEqual(bw._search(products, "12345"), [])
 
 
 class BookwormExceptionHandlingTests(unittest.TestCase):

@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -18,7 +18,8 @@ READ_TIMEOUT = 45
 REQUEST_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 MAX_RETRIES = 4
 MAX_WORKERS = 8
-ARTICLE_NUMBER_PATTERN = r"\d{5}"
+ARTICLE_NUMBER_PATTERN = r"(?<!\d)\d{5}(?!\d)"
+GME_LINK_PATTERN = re.compile(r"\.gme", re.IGNORECASE)
 
 _thread_local = threading.local()
 
@@ -157,7 +158,7 @@ def _unique_number_or_empty(*parts):
     numbers = set()
     for part in parts:
         if part:
-            numbers.update(re.findall(ARTICLE_NUMBER_PATTERN, part))
+            numbers.update(_extract_numbers(part))
     return next(iter(numbers)) if len(numbers) == 1 else ""
 
 
@@ -171,12 +172,27 @@ def _get_previous_sibling_text(sibling) -> str:
     return strip_attr() if callable(strip_attr) else str(sibling).strip()
 
 
-def _extract_number_from_link(link, gme_url):
+def _extract_number_from_link(link, base_url) -> str | None:
+    """Return a number, '' for conflicting evidence, or None for no evidence."""
     href = link.get("href", "")
+    gme_url = urljoin(base_url, href)
     link_text = link.get_text(" ", strip=True)
-    parent_text = link.parent.get_text(" ", strip=True) if link.parent else ""
-    previous_text = _get_previous_sibling_text(link.previous_sibling)
-    return _unique_number_or_empty(link_text, href, parent_text, previous_text, gme_url)
+    if any(_extract_numbers(part) for part in (link_text, href, gme_url)):
+        return _unique_number_or_empty(link_text, href, gme_url)
+
+    parent = link.parent
+    sibling_links = parent.find_all("a", href=GME_LINK_PATTERN) if parent else []
+    sibling_urls = {urljoin(base_url, sibling.get("href", "")) for sibling in sibling_links}
+    parent_text = parent.get_text(" ", strip=True) if parent and len(sibling_urls) == 1 else ""
+    previous = link.previous_sibling
+    if isinstance(previous, Tag) and (
+        previous in sibling_links or previous.find("a", href=GME_LINK_PATTERN) is not None
+    ):
+        previous = None
+    previous_text = _get_previous_sibling_text(previous)
+    if any(_extract_numbers(part) for part in (parent_text, previous_text)):
+        return _unique_number_or_empty(parent_text, previous_text)
+    return None
 
 
 def _fetch_products_from_category(session, category) -> list[Product]:
@@ -185,12 +201,15 @@ def _fetch_products_from_category(session, category) -> list[Product]:
     resp = session.get(category["url"], timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
-    gme_links = soup.find_all("a", href=re.compile(r"\.gme", re.IGNORECASE))
+    gme_links = soup.find_all("a", href=GME_LINK_PATTERN)
+    gme_urls = [urljoin(resp.url, link.get("href", "")) for link in gme_links]
+    page_number = _unique_number_or_empty(category["title"]) if len(set(gme_urls)) == 1 else ""
 
     products = []
-    for link in gme_links:
-        gme_url = urljoin(resp.url, link.get("href", ""))
-        number = _extract_number_from_link(link, gme_url)
+    for link, gme_url in zip(gme_links, gme_urls):
+        number = _extract_number_from_link(link, resp.url)
+        if number is None:
+            number = page_number
         products.append({
             "title": title,
             "number": number,

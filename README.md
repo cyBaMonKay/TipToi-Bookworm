@@ -10,6 +10,12 @@ A script-only tool to search and download TipToi® audio files (.gme) directly f
 - Shows a progress bar during download with elapsed time, estimated time remaining, and transfer rate
 - Saves files to the current working directory
 
+Article-number matching preserves leading zeros and recognizes complete five-digit
+numbers. Numbers in a download link's text or URL take priority over surrounding
+text. If both the link and its surrounding context lack a number, a unique
+page-title number is used only when the page has one distinct download URL. Conflicting numbers are left
+unassigned rather than guessed, and numbers from another download are not reused.
+
 ## Setup
 
 Use a project virtual environment to keep your global Python installation clean.
