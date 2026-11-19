@@ -1,5 +1,7 @@
 import unittest
+from html import escape
 from unittest.mock import patch
+from urllib.parse import quote
 
 import requests
 
@@ -13,6 +15,15 @@ from bookworm.catalog import (
     _get_previous_sibling_text,
     _unique_number_or_empty,
 )
+from bookworm.downloader import is_official_source
+
+SAFELINKS_URL = "https://eur03.safelinks.protection.outlook.com/?"
+# Tracking data with digit runs that would conflict with a real article number.
+SAFELINKS_TRACKING = "&data=05%7C02%7C12345%7C67890%7Credacted&sdata=redacted&reserved=0"
+
+
+def _safelink(target):
+    return f"{SAFELINKS_URL}url={quote(target, safe='')}{SAFELINKS_TRACKING}"
 
 
 class CatalogNumberMappingTests(unittest.TestCase):
@@ -248,6 +259,58 @@ class CatalogNumberMappingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(requests.RequestException, "category fetch failed"):
             _fetch_products_from_category(session, category)
+
+
+class CatalogSafeLinksTests(unittest.TestCase):
+    CATEGORY = {
+        "title": "tiptoi\u00ae Audiodatei Story 00758",
+        "url": "https://service.ravensburger.de/story",
+    }
+
+    def _fetch(self, *hrefs):
+        html = "".join(
+            f'<p><a href="{escape(href)}"><img src="cover.png"></a></p>' for href in hrefs
+        )
+        session = FakeHtmlSession(html)
+
+        products = _fetch_products_from_category(session, self.CATEGORY)
+
+        self.assertEqual(session.calls, [self.CATEGORY["url"]])
+        return products
+
+    def test_normalizes_wrapped_link_to_target_under_regular_host_policy(self):
+        for target, official in (
+            ("https://ravensburger.cloud/tiptoi/db/applications/Der%20interaktive%20Globus.gme", True),
+            ("https://example.invalid/files/story.gme", False),
+        ):
+            with self.subTest(target=target):
+                products = self._fetch(_safelink(target))
+
+                self.assertEqual(products, [{"title": "Story", "number": "00758", "gme": target}])
+                self.assertEqual(is_official_source(products[0]["gme"]), official)
+
+    def test_lists_wrapped_link_once_when_its_target_is_already_present(self):
+        direct = "https://ravensburger.cloud/files/story.gme"
+        wrapped = _safelink(direct)
+
+        for hrefs in ((direct, wrapped), (wrapped, direct), (wrapped, wrapped)):
+            with self.subTest(hrefs=hrefs):
+                products = self._fetch(*hrefs)
+
+                self.assertEqual(products, [{"title": "Story", "number": "00758", "gme": direct}])
+
+    def test_skips_wrapper_without_exactly_one_absolute_http_target(self):
+        for scenario, href in (
+            ("absent", f"{SAFELINKS_URL}data=story.gme"),
+            ("empty", f"{SAFELINKS_URL}url=&data=story.gme"),
+            ("ambiguous", f"{_safelink('https://ravensburger.cloud/a.gme')}&url=https%3A%2F%2Fravensburger.cloud%2Fb.gme"),
+            ("relative", f"{SAFELINKS_URL}url=ravensburger.cloud%2Fstory.gme"),
+            ("non-HTTP scheme", f"{SAFELINKS_URL}url=javascript%3Aalert(1)%2F%2Fstory.gme"),
+            ("unparsable host", f"{SAFELINKS_URL}url=https%3A%2F%2F%5Bstory.gme"),
+            ("nested wrapper", _safelink(_safelink("https://ravensburger.cloud/story.gme"))),
+        ):
+            with self.subTest(scenario=scenario):
+                self.assertEqual(self._fetch(href), [])
 
 
 class _CloseAwareSession:

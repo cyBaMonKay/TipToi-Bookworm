@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Literal, TypedDict
+from urllib.parse import urlsplit
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
@@ -132,11 +133,13 @@ def _confirm_and_download(chosen: dict) -> bool:
 
     number_info = f" ({chosen['number']})" if chosen["number"] else ""
     print(f"\n  Selected: {chosen['title']}{number_info}")
-    print(f"  URL:      {chosen['gme']}")
 
     if not is_official_source(chosen["gme"]):
-        print("  \u26a0 Skipped \u2014 URL is not from an official Ravensburger domain.\n")
+        host = urlsplit(chosen["gme"]).hostname or "This URL"
+        print(f"  \u26a0 Skipped \u2014 {host} is not an official Ravensburger domain.\n")
         return True
+
+    print(f"  URL:      {chosen['gme']}")
 
     confirm = input("  Download? [y/N]: ").strip().lower()
     if confirm != CONFIRM_DOWNLOAD:

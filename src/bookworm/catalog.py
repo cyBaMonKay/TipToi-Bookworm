@@ -3,7 +3,7 @@
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -20,6 +20,9 @@ MAX_RETRIES = 4
 MAX_WORKERS = 8
 ARTICLE_NUMBER_PATTERN = r"(?<!\d)\d{5}(?!\d)"
 GME_LINK_PATTERN = re.compile(r"\.gme", re.IGNORECASE)
+SAFELINKS_HOST = "safelinks.protection.outlook.com"
+SAFELINKS_TARGET_PARAM = "url"
+SAFELINKS_TARGET_SCHEMES = ("http", "https")
 
 _thread_local = threading.local()
 
@@ -172,17 +175,80 @@ def _get_previous_sibling_text(sibling) -> str:
     return strip_attr() if callable(strip_attr) else str(sibling).strip()
 
 
-def _extract_number_from_link(link, base_url) -> str | None:
+def _is_safelinks_host(host) -> bool:
+    return bool(host) and (host == SAFELINKS_HOST or host.endswith("." + SAFELINKS_HOST))
+
+
+def _is_safelinks_url(url) -> bool:
+    return _is_safelinks_host(urlsplit(url).hostname)
+
+
+def _decode_safelinks_target(url) -> str | None:
+    """Return the target of an Outlook SafeLinks *url* without requesting it.
+
+    Returns None unless the wrapper carries exactly one absolute HTTP(S) target
+    that is not itself a SafeLinks URL.
+    """
+    targets = parse_qs(urlsplit(url).query).get(SAFELINKS_TARGET_PARAM, [])
+    if len(targets) != 1:
+        return None
+
+    target = targets[0].strip()
+    try:
+        parts = urlsplit(target)
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme not in SAFELINKS_TARGET_SCHEMES or not host or _is_safelinks_host(host):
+        return None
+    return target
+
+
+def _resolve_gme_url(url) -> str | None:
+    """Return the download URL for absolute *url*, or None for an unusable SafeLinks wrapper."""
+    return _decode_safelinks_target(url) if _is_safelinks_url(url) else url
+
+
+def _collect_gme_links(soup, base_url):
+    """Return (link, download URL) pairs for the page's .gme links.
+
+    SafeLinks wrappers are replaced by their decoded target. A wrapper is dropped
+    when its target is absent or malformed, or when another link already provides it.
+    """
+    entries = []
+    for link in soup.find_all("a", href=GME_LINK_PATTERN):
+        url = urljoin(base_url, link.get("href", ""))
+        gme_url = _resolve_gme_url(url)
+        if gme_url is not None:
+            entries.append((link, gme_url, _is_safelinks_url(url)))
+
+    known_urls = {gme_url for _, gme_url, is_wrapped in entries if not is_wrapped}
+    links = []
+    for link, gme_url, is_wrapped in entries:
+        if is_wrapped:
+            if gme_url in known_urls:
+                continue
+            known_urls.add(gme_url)
+        links.append((link, gme_url))
+    return links
+
+
+def _extract_number_from_link(link, gme_url, base_url) -> str | None:
     """Return a number, '' for conflicting evidence, or None for no evidence."""
     href = link.get("href", "")
-    gme_url = urljoin(base_url, href)
+    if _is_safelinks_url(urljoin(base_url, href)):
+        # The wrapper's query carries tracking data; only the decoded target is evidence.
+        href = ""
     link_text = link.get_text(" ", strip=True)
     if any(_extract_numbers(part) for part in (link_text, href, gme_url)):
         return _unique_number_or_empty(link_text, href, gme_url)
 
     parent = link.parent
     sibling_links = parent.find_all("a", href=GME_LINK_PATTERN) if parent else []
-    sibling_urls = {urljoin(base_url, sibling.get("href", "")) for sibling in sibling_links}
+    sibling_urls = {
+        _resolve_gme_url(urljoin(base_url, sibling.get("href", ""))) for sibling in sibling_links
+    }
+    sibling_urls.discard(None)
     parent_text = parent.get_text(" ", strip=True) if parent and len(sibling_urls) == 1 else ""
     previous = link.previous_sibling
     if isinstance(previous, Tag) and (
@@ -201,13 +267,13 @@ def _fetch_products_from_category(session, category) -> list[Product]:
     resp = session.get(category["url"], timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
-    gme_links = soup.find_all("a", href=GME_LINK_PATTERN)
-    gme_urls = [urljoin(resp.url, link.get("href", "")) for link in gme_links]
-    page_number = _unique_number_or_empty(category["title"]) if len(set(gme_urls)) == 1 else ""
+    gme_links = _collect_gme_links(soup, resp.url)
+    distinct_urls = {gme_url for _, gme_url in gme_links}
+    page_number = _unique_number_or_empty(category["title"]) if len(distinct_urls) == 1 else ""
 
     products = []
-    for link, gme_url in zip(gme_links, gme_urls):
-        number = _extract_number_from_link(link, resp.url)
+    for link, gme_url in gme_links:
+        number = _extract_number_from_link(link, gme_url, resp.url)
         if number is None:
             number = page_number
         products.append({

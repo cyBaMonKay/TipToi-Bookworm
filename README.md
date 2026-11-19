@@ -68,8 +68,10 @@ Launcher exit code contract:
 
 For defense in depth, URL host validation is enforced in two layers:
 
-1. **Runtime precheck (`bookworm`)**: warns and skips entries that are not hosted on official Ravensburger domains.
+1. **Runtime precheck (`bookworm`)**: warns and skips entries that are not hosted on official Ravensburger domains, showing only the rejected host instead of the full URL.
 2. **Downloader enforcement (`bookworm.downloader.download_gme`)**: rejects non-official hosts and non-HTTPS URLs with a `ValueError`, even when called directly outside the interactive runtime flow.
+
+Catalog links wrapped by Outlook SafeLinks (`*.safelinks.protection.outlook.com`) are decoded locally to their `url` target; the wrapper is never requested, and Outlook is not an allowed download host. The decoded target then passes through the same checks as any other link. Wrappers without exactly one absolute HTTP(S) target (including wrappers of another SafeLinks URL) are skipped. A decoded target that another link on the same page already provides is listed only once.
 
 The downloader follows redirects itself instead of letting `requests` follow them automatically. Each redirect target (relative `Location` headers are resolved against the current URL) must pass the same HTTPS + official-host check **before** it is requested, so a disallowed host is never contacted and HTTPS cannot be downgraded to plaintext HTTP. At most 5 redirects are followed; more raise `requests.TooManyRedirects`. A rejected download leaves no partial file and keeps any existing file with the same name.
 

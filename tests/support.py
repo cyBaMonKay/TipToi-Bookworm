@@ -28,8 +28,10 @@ class FakeHtmlSession:
     def __init__(self, html, url="https://service.ravensburger.de/cat"):
         self._html = html
         self._url = url
+        self.calls = []
 
-    def get(self, _url, timeout=None):
+    def get(self, url, timeout=None):
+        self.calls.append(url)
         return FakeTextResponse(self._html, self._url)
 
 

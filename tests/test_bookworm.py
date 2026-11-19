@@ -266,8 +266,26 @@ class BookwormInteractiveLoopTests(unittest.TestCase):
                             code = bw._run_interactive()
 
         self.assertEqual(code, 0)
+        self.assertIn("URL:      https://ravensburger.cloud/files/book.gme", out.getvalue())
         self.assertIn("Download cancelled.", out.getvalue())
         self.assertIn("Bye!", out.getvalue())
+        mock_download.assert_not_called()
+
+    def test_rejected_source_shows_only_host_and_skips_download(self):
+        out = io.StringIO()
+        products = [{"title": "Book", "number": "12345", "gme": "https://example.invalid/book.gme?data=tracking"}]
+
+        with patch.object(bw, "_load_catalog", return_value=products):
+            with patch.object(bw, "download_gme") as mock_download:
+                with patch("builtins.input", side_effect=["book", "1", "q"]):
+                    with patch("sys.stdout", new=out):
+                        code = bw._run_interactive()
+
+        self.assertEqual(code, 0)
+        self.assertIn(
+            "Skipped \u2014 example.invalid is not an official Ravensburger domain.", out.getvalue()
+        )
+        self.assertNotIn("tracking", out.getvalue())
         mock_download.assert_not_called()
 
 
